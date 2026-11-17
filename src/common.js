@@ -9,7 +9,7 @@ export const HERO_FLAG = `${ID}/hero`; // item metadata: this token is a hero
 export const MAX_ACTIONS = 3;
 
 export function emptyState() {
-  return { entries: [], round: 0, turn: 0, started: false };
+  return { entries: [], round: 0, turn: 0, started: false, autoMove: true };
 }
 
 export async function getState() {
@@ -59,9 +59,33 @@ export function newEntry({ kind, items, name, img }) {
     img: img || "",
     init: null, // heroes only: 1 Hesitant, 2 Ready, 3 Vigilant
     pips: freshPips(),
-    speed: 6,
-    moveLeft: 0,
+    speed: 6, // spaces per Move action (the GM can change it)
+    budget: 0, // spaces granted by Move actions this turn
+    moved: {}, // token id -> spaces moved this turn
   };
+}
+
+// Older saves stored a single moveLeft number.
+export function migrateEntry(e) {
+  if (e.budget === undefined) e.budget = Number(e.moveLeft) || 0;
+  if (!e.moved || typeof e.moved !== "object") e.moved = {};
+  delete e.moveLeft;
+  return e;
+}
+
+// Minion groups share actions, but each minion moves on its own: the furthest one counts.
+export function maxMoved(e) {
+  const v = Object.values(e.moved || {});
+  return v.length ? Math.max(...v) : 0;
+}
+
+export function movesLeft(e) {
+  return Math.round(((Number(e.budget) || 0) - maxMoved(e)) * 10) / 10;
+}
+
+export function resetMovement(e) {
+  e.budget = 0;
+  e.moved = {};
 }
 
 // Pips at the start of combat: heroes only get as many actions as initiative allows.

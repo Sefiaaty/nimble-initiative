@@ -44,3 +44,5 @@ button:disabled{cursor:default;opacity:.55}
 .endturn{align-self:flex-start;padding:3px 10px;border-radius:12px;background:var(--accent);color:#000;font-weight:600;font-size:12px}
 .legend{margin-top:10px;color:var(--fg2);font-size:11px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .legend .pip{width:11px;height:11px;border-width:1.5px;margin-left:6px}
+.left.over{color:#ff6b6b}
+.controls .auto{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--fg2);margin-left:auto}

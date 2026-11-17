@@ -1,6 +1,6 @@
 // Background script: context menus and cleanup when tokens are deleted.
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, HERO_FLAG, HEROES_KEY, getHeroImages, isHero, itemName, newEntry, updateState } from "./common.js";
+import { ID, HERO_FLAG, HEROES_KEY, getHeroImages, getState, setState, isHero, itemName, newEntry, updateState, migrateEntry, maxMoved } from "./common.js";
 
 const CHAR = { key: "layer", value: "CHARACTER" };
 
@@ -70,27 +70,63 @@ OBR.onReady(async () => {
     },
   });
 
-  // When tokens are deleted, drop them from the tracker (GM only, to avoid duplicate writes).
+  // Everything below runs for the GM only, so there is one writer.
   const role = await OBR.player.getRole();
   if (role !== "GM") return;
-  const prune = async () => {
+
+  // Last known position of every tracked token, to measure how far it moved.
+  let lastPos = new Map();
+  let busy = Promise.resolve();
+
+  const sync = async (items) => {
     if (!(await OBR.scene.isReady())) return;
-    const ids = new Set((await OBR.scene.items.getItems()).map((i) => i.id));
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const s = await getState();
     let changed = false;
-    await updateState((s) => {
-      for (const e of s.entries) {
-        const keep = e.items.filter((id) => ids.has(id));
-        if (keep.length !== e.items.length) { e.items = keep; changed = true; }
-      }
-      const before = s.entries.length;
-      s.entries = s.entries.filter((e) => e.items.length > 0);
-      if (s.entries.length !== before) {
+
+    // 1. Drop deleted tokens (and empty entries) from the tracker.
+    for (const e of s.entries) {
+      const keep = e.items.filter((id) => byId.has(id));
+      if (keep.length !== e.items.length) { e.items = keep; changed = true; }
+    }
+    const before = s.entries.length;
+    s.entries = s.entries.filter((e) => e.items.length > 0);
+    if (s.entries.length !== before) { changed = true; if (s.turn >= s.entries.length) s.turn = 0; }
+
+    // 2. Auto movement: measure each tracked token's move in grid spaces.
+    const next = new Map();
+    for (const e of s.entries) {
+      migrateEntry(e);
+      for (const id of e.items) {
+        const it = byId.get(id);
+        const prev = lastPos.get(id);
+        next.set(id, { x: it.position.x, y: it.position.y });
+        if (!prev || (prev.x === it.position.x && prev.y === it.position.y)) continue;
+        if (!s.started || s.autoMove === false) continue;
+        // Only the creature whose turn it is: shoves and GM repositioning don't cost actions.
+        if (!s.entries[s.turn] || s.entries[s.turn].id !== e.id) continue;
+        const d = await OBR.scene.grid.getDistance(prev, it.position);
+        if (!d) continue;
+        e.moved[id] = Math.round(((e.moved[id] || 0) + d) * 10) / 10;
+        // Out of movement? Spend another action on Move automatically, if one is ready.
+        while (maxMoved(e) > e.budget) {
+          const i = e.pips.indexOf("ready");
+          if (i < 0 || !(Number(e.speed) > 0)) break;
+          e.pips[i] = "spent";
+          e.budget += Number(e.speed);
+        }
         changed = true;
-        if (s.turn >= s.entries.length) s.turn = 0;
       }
-      return changed ? s : false;
-    }).catch(() => {});
+    }
+    lastPos = next;
+    if (changed) await setState(s);
   };
-  let timer = null;
-  OBR.scene.items.onChange(() => { clearTimeout(timer); timer = setTimeout(prune, 400); });
+
+  const run = (items) => { busy = busy.then(() => sync(items)).catch(() => {}); };
+  OBR.scene.items.onChange(run);
+  const init = async () => { if (await OBR.scene.isReady()) { lastPos = new Map(); run(await OBR.scene.items.getItems()); } };
+  OBR.scene.onReadyChange(init);
+  // New entries: start tracking their tokens from where they stand now.
+  OBR.scene.onMetadataChange(async () => run(await OBR.scene.items.getItems()));
+  init();
 });

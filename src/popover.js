@@ -1,6 +1,6 @@
 // Popover UI: the Nimble initiative list.
 import OBR from "@owlbear-rodeo/sdk";
-import { STATE_KEY, MAX_ACTIONS, emptyState, freshPips, startingPips, updateState } from "./common.js";
+import { STATE_KEY, emptyState, freshPips, startingPips, updateState, migrateEntry, movesLeft, resetMovement } from "./common.js";
 
 const app = document.getElementById("app");
 let role = "PLAYER";
@@ -33,6 +33,8 @@ function render() {
         ? `<button data-act="next" class="primary">End turn &amp; next</button><button data-act="stop">End combat</button>`
         : `<button data-act="start" class="primary" ${s.entries.length ? "" : "disabled"}>Start combat</button>`}
       <button data-act="clear" title="Remove everyone from the list">Clear</button>
+      <label class="auto" title="Measure token moves on the map and take them off the spaces left">
+        <input type="checkbox" data-act="auto" ${s.autoMove === false ? "" : "checked"}> Auto movement</label>
     </div>` : ""}`;
 
   if (!s.entries.length) {
@@ -43,6 +45,8 @@ function render() {
   }
 
   const rows = s.entries.map((e) => {
+    migrateEntry(e);
+    const left = movesLeft(e);
     const active = e.id === activeId();
     const edit = canEdit(e);
     const pips = e.pips.map((p, i) =>
@@ -64,11 +68,11 @@ function render() {
         <div class="line">
           <div class="pips">${pips}</div>
           <div class="move">
-            <button data-act="move" data-id="${e.id}" title="Spend 1 action to Move: adds your speed to spaces left" ${edit ? "" : "disabled"}>Move</button>
+            <button data-act="move" data-id="${e.id}" title="Spend 1 action to Move: adds your speed to spaces left. With Auto movement on, this happens by itself when the token runs out." ${edit ? "" : "disabled"}>Move</button>
             <button data-act="mv" data-d="-1" data-id="${e.id}" ${edit ? "" : "disabled"}>−</button>
-            <span class="left" title="Spaces of movement left">${e.moveLeft}</span>
+            <span class="left ${left < 0 ? "over" : ""}" title="${left < 0 ? "Moved further than its Move actions allow" : "Spaces of movement left"}">${left}</span>
             <button data-act="mv" data-d="1" data-id="${e.id}" ${edit ? "" : "disabled"}>+</button>
-            <label title="Speed (spaces per Move action)">spd <input type="number" min="0" max="99" value="${e.speed}" data-act="speed" data-id="${e.id}" ${edit ? "" : "disabled"}></label>
+            <label title="Spaces per Move action">spd <input type="number" min="0" max="99" value="${e.speed}" data-act="speed" data-id="${e.id}" ${edit ? "" : "disabled"}></label>
           </div>
         </div>
         ${active ? `<button class="endturn" data-act="endturn" data-id="${e.id}" ${edit ? "" : "disabled"}>End turn</button>` : ""}
@@ -85,7 +89,7 @@ const find = (s, id) => s.entries.find((e) => e.id === id);
 
 function endTurnOf(e) {
   e.pips = freshPips();
-  e.moveLeft = 0;
+  resetMovement(e);
 }
 
 async function handle(act, el) {
@@ -102,11 +106,11 @@ async function handle(act, el) {
     switch (act) {
       case "start":
         s.started = true; s.round = 1; s.turn = 0;
-        for (const x of s.entries) { x.pips = startingPips(x); x.moveLeft = 0; }
+        for (const x of s.entries) { migrateEntry(x); x.pips = startingPips(x); resetMovement(x); }
         break;
       case "stop":
         s.started = false; s.round = 0; s.turn = 0;
-        for (const x of s.entries) { x.pips = freshPips(); x.moveLeft = 0; x.init = null; }
+        for (const x of s.entries) { migrateEntry(x); x.pips = freshPips(); resetMovement(x); x.init = null; }
         break;
       case "clear":
         return Object.assign(s, emptyState());
@@ -151,13 +155,15 @@ async function handle(act, el) {
         if (!e) return false;
         const i = e.pips.indexOf("ready");
         if (i < 0) return false; // no actions left
+        migrateEntry(e);
         e.pips[i] = "spent";
-        e.moveLeft += Number(e.speed) || 0;
+        e.budget += Number(e.speed) || 0;
         break;
       }
       case "mv":
         if (!e) return false;
-        e.moveLeft = Math.max(0, e.moveLeft + Number(el.dataset.d));
+        migrateEntry(e);
+        e.budget = Math.max(0, e.budget + Number(el.dataset.d));
         break;
       default:
         return false;
@@ -172,6 +178,7 @@ app.addEventListener("click", (ev) => {
 });
 app.addEventListener("change", (ev) => {
   const el = ev.target;
+  if (el.dataset.act === "auto") { updateState((s) => { s.autoMove = el.checked; }); return; }
   if (el.dataset.act !== "speed") return;
   const v = Math.max(0, Math.min(99, Number(el.value) || 0));
   updateState((s) => { const e = find(s, el.dataset.id); if (!e) return false; e.speed = v; });

@@ -1,0 +1,16 @@
+{
+  "name": "Nimble Initiative",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "author": "Shade",
+  "description": "Nimble 2e initiative: 3-action pips, Hesitant/Ready/Vigilant starts, reactions, split movement and minion groups.",
+  "icon": "/icon.svg",
+  "background_url": "/background.html",
+  "action": {
+    "title": "Nimble Initiative",
+    "icon": "/icon.svg",
+    "popover": "/index.html",
+    "width": 400,
+    "height": 620
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "nimble-initiative",
+  "version": "1.0.0",
+  "description": "Nimble 2e initiative tracker for Owlbear Rodeo",
+  "scripts": {
+    "build": "./build.sh"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@owlbear-rodeo/sdk": "^3.1.0",
+    "esbuild": "^0.24.0"
+  },
+  "private": true
+}

@@ -7,3 +7,7 @@ npx esbuild src/background.js src/popover.js --bundle --format=esm --minify --ou
 cp public/*.html public/*.css public/*.svg docs/
 sed "s#\"/#\"$BASE/#g" public/manifest.json > docs/manifest.json
 touch docs/.nojekyll
+# Cache-bust: point the pages at this build's files, so a refresh never mixes old and new code.
+V=$(cat docs/*.js docs/*.css | sha1sum | cut -c1-8)
+sed -i "s#src=\"popover.js\"#src=\"popover.js?v=$V\"#; s#href=\"style.css\"#href=\"style.css?v=$V\"#" docs/index.html
+sed -i "s#src=\"background.js\"#src=\"background.js?v=$V\"#" docs/background.html

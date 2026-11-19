@@ -3,14 +3,14 @@
   "version": "2.0.0",
   "manifest_version": 1,
   "author": "Shade",
-  "description": "Nimble 2e initiative: 3-action heroes with reactions, book-accurate monster turns, legendary steps, minion groups, HP, and a nimble.nexus monster library.",
+  "description": "Nimble 2e initiative: action pips, reactions, monster turns, legendary steps and a monster library.",
   "icon": "https://sefiaaty.github.io/nimble-initiative/icon.svg",
   "background_url": "https://sefiaaty.github.io/nimble-initiative/background.html",
   "action": {
     "title": "Nimble Initiative",
     "icon": "https://sefiaaty.github.io/nimble-initiative/icon.svg",
     "popover": "https://sefiaaty.github.io/nimble-initiative/index.html",
-    "width": 420,
-    "height": 700
+    "width": 400,
+    "height": 620
   }
 }

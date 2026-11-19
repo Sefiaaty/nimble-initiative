@@ -1,99 +1,194 @@
-// Popover UI: the Nimble initiative list.
+// Popover UI: Nimble initiative tracker (v2) and the monster library.
 import OBR from "@owlbear-rodeo/sdk";
-import { STATE_KEY, emptyState, freshPips, startingPips, updateState, migrateEntry, movesLeft, resetMovement } from "./common.js";
+import {
+  STATE_KEY, MON_KEY, OPEN_KEY, REACTIONS, GROUP_COLORS, GMG_NAMES,
+  emptyState, migrateState, updateState, startingPips, freshPips, movesLeft, resetMovement,
+  startTurn, finishTurn, nextUp, newRound, actors, toggleReaction, hpOf, isMonsterKind,
+  parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
+} from "./common.js";
 
 const app = document.getElementById("app");
 let role = "PLAYER";
 let state = emptyState();
+let tab = "init";
 let dragId = null;
+let pendingRender = false;
+const openStat = new Set();       // entry ids with the stat block expanded
+const statCache = new Map();      // token id -> stat block
+let lib = loadLibrary();
+let libQuery = "", libType = "all", libOpen = null, libMsg = "", libBusy = false;
+let linkTargets = null;           // token ids chosen from the map's right-click menu
+let selection = [];
 
 const INIT = [
   { n: 1, label: "Hesitant", tip: "Initiative 1-9: starts with 1 action" },
   { n: 2, label: "Ready", tip: "Initiative 10-19: starts with 2 actions" },
-  { n: 3, label: "Vigilant", tip: "Initiative 20+: starts with 3 actions" },
+  { n: 3, label: "Vigilant", tip: "Initiative 20+ or a natural 20: starts with 3 actions" },
 ];
-const PIP_TIP = { ready: "Ready", spent: "Spent", reaction: "Spent on a reaction", locked: "Not available this round (initiative)" };
-const NEXT_PIP = { ready: "spent", spent: "reaction", reaction: "ready", locked: "ready" };
+const PIP_TIP = { ready: "Ready", spent: "Spent", reaction: "Used on a reaction", locked: "Not available this round (initiative)" };
 
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const isGM = () => role === "GM";
 const canEdit = (e) => isGM() || e.kind === "hero";
-const activeId = () => (state.started && state.entries[state.turn] ? state.entries[state.turn].id : null);
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
+const find = (s, id) => s.entries.find((e) => e.id === id);
 
+// Don't redraw while someone is typing in a field; redraw when they leave it.
 function render() {
+  const a = document.activeElement;
+  if (a && app.contains(a) && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && a.type !== "checkbox") { pendingRender = true; return; }
+  pendingRender = false;
+  app.innerHTML = (isGM() ? `<nav class="tabs"><button class="${tab === "init" ? "on" : ""}" data-act="tab" data-t="init">Initiative</button><button class="${tab === "lib" ? "on" : ""}" data-act="tab" data-t="lib">Monster Library</button></nav>` : "")
+    + (tab === "lib" && isGM() ? renderLibrary() : renderInit());
+}
+app.addEventListener("focusout", () => setTimeout(() => { if (pendingRender) render(); }, 0));
+
+// ================================================================ initiative
+function phaseText(s) {
+  if (!s.started) return "Not in combat";
+  const act = find(s, s.active);
+  if (s.phase === "legendary" && act) return `Round ${s.round} · ${esc(act.name)} acts`;
+  if (s.phase === "turn" && act) return `Round ${s.round} · ${esc(act.name)}'s turn`;
+  return nextUp(s) ? `Round ${s.round} · who's next?` : `Round ${s.round} · everyone has acted`;
+}
+
+function renderInit() {
   const s = state;
   const gm = isGM();
+  const next = nextUp(s);
+  const nextLabel = !s.started ? "" : s.phase === "legendary" ? "Legendary done"
+    : s.phase === "turn" ? "End turn & next" : next ? `Start: ${esc(next.name)}` : `Start round ${s.round + 1}`;
   const head = `
-    <header>
-      <div class="title">Nimble Initiative</div>
-      <div class="round">${s.started ? `Round ${s.round}` : "Not in combat"}</div>
-    </header>
+    <header><div class="title">Nimble Initiative</div><div class="round">${phaseText(s)}</div></header>
     ${gm ? `<div class="controls">
       ${s.started
-        ? `<button data-act="next" class="primary">End turn &amp; next</button><button data-act="stop">End combat</button>`
+        ? `<button data-act="next" class="primary">${nextLabel}</button><button data-act="stop">End combat</button>`
         : `<button data-act="start" class="primary" ${s.entries.length ? "" : "disabled"}>Start combat</button>`}
       <button data-act="clear" title="Remove everyone from the list">Clear</button>
-      <label class="auto" title="Measure token moves on the map and take them off the spaces left">
-        <input type="checkbox" data-act="auto" ${s.autoMove === false ? "" : "checked"}> Auto movement</label>
+      <label class="auto" title="Measure token moves on the map for whoever is acting"><input type="checkbox" data-act="auto" ${s.autoMove === false ? "" : "checked"}> Auto movement</label>
     </div>` : ""}`;
 
   if (!s.entries.length) {
-    app.innerHTML = head + `<div class="empty">${gm
-      ? "Select tokens on the map, right-click, and choose <b>Add to Nimble Initiative</b> or <b>Add as Minion Group</b>.<br><br>Use <b>Mark as Hero</b> once on each hero token: it is remembered for future scenes."
+    return head + `<div class="empty">${gm
+      ? "Select tokens on the map, right-click, and choose <b>Add to Nimble Initiative</b>.<br><br>Right-click a monster and choose <b>Link Nimble Monster</b> to give it its nimble.nexus stat block: HP, armor, Speed and actions fill in by themselves.<br><br>Use <b>Mark as Hero</b> once on each hero token: it is remembered for future scenes."
       : "No one is in the initiative list yet."}</div>`;
-    return;
   }
-
-  const rows = s.entries.map((e) => {
-    migrateEntry(e);
-    const left = movesLeft(e);
-    const active = e.id === activeId();
-    const edit = canEdit(e);
-    const pips = e.pips.map((p, i) =>
-      `<button class="pip ${p}" data-act="pip" data-id="${e.id}" data-i="${i}" title="${PIP_TIP[p]}" ${edit ? "" : "disabled"}></button>`).join("");
-    const init = e.kind === "hero" ? `<div class="init">${INIT.map((o) =>
-      `<button class="chip ${e.init === o.n ? "on" : ""}" data-act="init" data-id="${e.id}" data-n="${o.n}" title="${o.tip}" ${edit ? "" : "disabled"}>${o.label}</button>`).join("")}</div>` : "";
-    const count = e.kind === "minion" ? `<span class="count">×${e.items.length}</span>` : "";
-    const badge = e.kind === "hero" ? `<span class="badge hero">Hero</span>` : e.kind === "minion" ? `<span class="badge minion">Minions</span>` : "";
-    return `
-    <div class="row ${active ? "active" : ""} ${e.kind}" data-id="${e.id}" ${gm ? 'draggable="true"' : ""}>
-      ${gm ? `<div class="grip" title="Drag to reorder">⋮⋮</div>` : ""}
-      ${e.img ? `<img src="${esc(e.img)}" alt="" onerror="this.style.visibility='hidden'">` : `<div class="noimg"></div>`}
-      <div class="body">
-        <div class="top">
-          <button class="name" data-act="focus" data-id="${e.id}" title="Show on map">${esc(e.name)}</button>${count}${badge}
-          ${gm ? `<button class="x" data-act="remove" data-id="${e.id}" title="Remove from list">✕</button>` : ""}
-        </div>
-        ${init}
-        <div class="line">
-          <div class="pips">${pips}</div>
-          <div class="move">
-            <button data-act="move" data-id="${e.id}" title="Spend 1 action to Move: adds your speed to spaces left. With Auto movement on, this happens by itself when the token runs out." ${edit ? "" : "disabled"}>Move</button>
-            <button data-act="mv" data-d="-1" data-id="${e.id}" ${edit ? "" : "disabled"}>−</button>
-            <span class="left ${left < 0 ? "over" : ""}" title="${left < 0 ? "Moved further than its Move actions allow" : "Spaces of movement left"}">${left}</span>
-            <button data-act="mv" data-d="1" data-id="${e.id}" ${edit ? "" : "disabled"}>+</button>
-            <label title="Spaces per Move action">spd <input type="number" min="0" max="99" value="${e.speed}" data-act="speed" data-id="${e.id}" ${edit ? "" : "disabled"}></label>
-          </div>
-        </div>
-        ${active ? `<button class="endturn" data-act="endturn" data-id="${e.id}" ${edit ? "" : "disabled"}>End turn</button>` : ""}
-      </div>
-    </div>`;
-  }).join("");
-
-  app.innerHTML = head + `<div class="list">${rows}</div>
+  const legBanner = s.started && s.phase === "legendary" && find(s, s.active)
+    ? `<div class="banner leg">After each hero's turn: <b>${esc(find(s, s.active).name)}</b> acts. Press <b>Done</b> when finished.</div>` : "";
+  return head + legBanner + `<div class="list">${s.entries.map(row).join("")}</div>
     <div class="legend"><span class="pip ready"></span>ready <span class="pip spent"></span>spent <span class="pip reaction"></span>reaction <span class="pip locked"></span>not yet</div>`;
 }
 
-// ---- actions ----
-const find = (s, id) => s.entries.find((e) => e.id === id);
-
-function endTurnOf(e) {
-  e.pips = freshPips();
-  resetMovement(e);
+function hpBlock(e) {
+  if (!e.maxHp || e.kind === "minion") return "";
+  const id = e.items[0];
+  const hp = hpOf(e, id);
+  const pct = Math.max(0, Math.min(100, (hp / e.maxHp) * 100));
+  if (!isGM()) return "";
+  return `<div class="hp">
+    <div class="bar"><div class="fill ${hp <= e.maxHp / 2 ? "low" : ""}" style="width:${pct}%"></div><span>${hp} / ${e.maxHp} HP</span></div>
+    <input type="number" min="0" placeholder="0" data-act="hpamt" data-id="${e.id}" title="Amount">
+    <button data-act="dmg" data-id="${e.id}" title="Take damage">−</button><button data-act="heal" data-id="${e.id}" title="Heal">+</button>
+  </div>`;
 }
 
+function statusBadges(e) {
+  const out = [];
+  if (e.kind === "hero") out.push(`<span class="badge hero">Hero</span>`);
+  if (e.kind === "minion") out.push(`<span class="badge minion">Minions</span>`);
+  if (e.kind === "legendary") out.push(`<span class="badge legendary">Legendary</span>`);
+  if (e.armor) out.push(`<span class="badge armor ${e.armor}" title="${cap(e.armor)} armor">${cap(e.armor)} armor</span>`);
+  if (e.maxHp && e.kind !== "minion") {
+    const hp = hpOf(e, e.items[0]);
+    if (hp <= 0) out.push(e.kind === "legendary" ? `<span class="badge dying">Last Stand</span>` : `<span class="badge dying">Down</span>`);
+    else if (hp <= e.maxHp / 2) out.push(`<span class="badge bloodied">Bloodied</span>`);
+  }
+  return out.join("");
+}
+
+function row(e) {
+  const s = state;
+  const gm = isGM();
+  const edit = canEdit(e);
+  const active = e.id === s.active;
+  const done = s.done.includes(e.id);
+  const mon = isMonsterKind(e.kind);
+  const left = movesLeft(e);
+  const pips = e.pips.map((p, i) => `<button class="pip ${p}" data-act="pip" data-id="${e.id}" data-i="${i}" title="${mon ? (p === "ready" ? "Action ready" : "Action used") : PIP_TIP[p]}" ${edit ? "" : "disabled"}></button>`).join("");
+  const init = e.kind === "hero" ? `<div class="init">${INIT.map((o) =>
+    `<button class="chip ${e.init === o.n ? "on" : ""}" data-act="init" data-id="${e.id}" data-n="${o.n}" title="${o.tip}" ${edit ? "" : "disabled"}>${o.label}</button>`).join("")}</div>` : "";
+  const reacts = e.kind === "hero" ? `<div class="reacts" title="Reactions: each costs 1 action from your next turn, once per round">${REACTIONS.map((r) =>
+    `<button class="rx ${e.react[r.k] ? "on" : ""}" data-act="react" data-id="${e.id}" data-k="${r.k}" title="${r.name}" ${edit && (e.react[r.k] || e.pips.includes("ready")) ? "" : "disabled"}>${r.label}</button>`).join("")}</div>` : "";
+  const count = e.kind === "minion" ? `<span class="count">×${e.items.length}</span>` : "";
+  const dot = e.kind === "minion" && gm ? `<span class="dot" style="background:${GROUP_COLORS[e.color % GROUP_COLORS.length]}" title="Group colour on the map (only you see it)"></span>` : "";
+  const move = mon
+    ? `<div class="move"><span class="lbl">Move</span>
+        <button data-act="mv" data-d="-1" data-id="${e.id}" ${edit ? "" : "disabled"}>−</button>
+        <span class="left ${left < 0 ? "over" : ""}" title="Spaces left this turn">${active ? left : e.speed}</span>
+        <button data-act="mv" data-d="1" data-id="${e.id}" ${edit ? "" : "disabled"}>+</button>
+        <label title="Speed">spd <input type="number" min="0" max="99" value="${e.speed}" data-act="speed" data-id="${e.id}" ${edit ? "" : "disabled"}></label></div>`
+    : `<div class="move">
+        <button data-act="move" data-id="${e.id}" title="Spend 1 action to Move: adds your Speed to spaces left. With Auto movement on, this happens by itself." ${edit ? "" : "disabled"}>Move</button>
+        <button data-act="mv" data-d="-1" data-id="${e.id}" ${edit ? "" : "disabled"}>−</button>
+        <span class="left ${left < 0 ? "over" : ""}" title="${left < 0 ? "Moved further than its Move actions allow" : "Spaces of movement left"}">${left}</span>
+        <button data-act="mv" data-d="1" data-id="${e.id}" ${edit ? "" : "disabled"}>+</button>
+        <label title="Spaces per Move action">spd <input type="number" min="0" max="99" value="${e.speed}" data-act="speed" data-id="${e.id}" ${edit ? "" : "disabled"}></label></div>`;
+  const canStart = s.started && s.phase === "pick" && !done && e.kind !== "legendary" && (gm || e.kind === "hero");
+  const turnBtn = active
+    ? `<button class="endturn" data-act="endturn" data-id="${e.id}" ${edit ? "" : "disabled"}>${s.phase === "legendary" ? "Done" : "End turn"}</button>`
+    : canStart ? `<button class="taketurn ${e.kind === "hero" ? "" : "mon"}" data-act="take" data-id="${e.id}" title="${e.kind === "hero" ? "Start this hero's turn" : "Let this monster act now (e.g. an ambush)"}">▶ ${e.kind === "hero" ? "Take turn" : "Act now"}</button>` : "";
+  const nactCtl = mon && gm && e.kind !== "legendary" ? `<span class="nact"><button data-act="nact" data-d="-1" data-id="${e.id}" title="Fewer actions">−</button><button data-act="nact" data-d="1" data-id="${e.id}" title="More actions">+</button></span>` : "";
+  return `
+  <div class="row ${active ? "active" : ""} ${done ? "done" : ""} ${e.kind}" data-id="${e.id}" ${gm ? 'draggable="true"' : ""}>
+    ${gm ? `<div class="grip" title="Drag to reorder">⋮⋮</div>` : ""}
+    ${e.img ? `<img src="${esc(e.img)}" alt="" onerror="this.style.visibility='hidden'">` : `<div class="noimg"></div>`}
+    <div class="body">
+      <div class="top">
+        ${dot}<button class="name" data-act="focus" data-id="${e.id}" title="Show on map">${esc(e.name)}</button>${count}
+        ${done && s.started ? `<span class="acted" title="Has acted this round">✓</span>` : ""}
+        <span class="badges">${statusBadges(e)}</span>
+        ${gm && e.linked ? `<button class="sb ${openStat.has(e.id) ? "on" : ""}" data-act="stat" data-id="${e.id}" title="Stat block">≡</button>` : ""}
+        ${gm ? `<button class="x" data-act="remove" data-id="${e.id}" title="Remove from list">✕</button>` : ""}
+      </div>
+      ${init}
+      ${hpBlock(e)}
+      <div class="line"><div class="pips">${pips}${nactCtl}</div>${move}</div>
+      ${reacts}
+      ${openStat.has(e.id) ? `<div class="stat">${statHtml(statCache.get(e.items[0]))}</div>` : ""}
+      ${turnBtn}
+    </div>
+  </div>`;
+}
+
+function statHtml(m) {
+  if (!m) return `<div class="muted">Loading…</div>`;
+  const moves = (m.moves || []).map((x) => `${x.mode ? cap(x.mode) + " " : ""}${x.speed}`).join(", ") || m.speed;
+  const saves = m.saves ? Object.entries(m.saves).map(([k, v]) => `${k.toUpperCase()}${v > 0 ? "+".repeat(v) : "–".repeat(-v)}`).join(" ") : "";
+  const list = (arr) => arr.map((x) => `<p><b>${esc(x.name)}${x.count > 1 ? ` (${x.count}×)` : ""}.</b> ${esc(x.desc)}</p>`).join("");
+  const members = (m.members || []).map((mm) => `<div class="member"><div class="mh">${esc(mm.name)}${mm.hpPerHero ? ` · ${mm.hpPerHero}/hero HP` : mm.hp ? ` · ${mm.hp} HP` : ""}${mm.armor && mm.armor !== "none" ? ` · ${cap(mm.armor)} armor` : ""}</div>${list(mm.abilities)}${list(mm.actions)}</div>`).join("");
+  return `
+    <div class="sh">Lvl ${esc(m.level || "–")} ${esc(cap(m.size))} ${esc(m.kind)} · ${m.hpPerHero ? `${m.hpPerHero}/hero` : m.hp} HP · ${cap(m.armor === "none" ? "no" : m.armor)} armor · Speed ${esc(moves)}${saves ? ` · Saves ${esc(saves)}` : ""}</div>
+    ${m.resist ? `<p><b>Resists:</b> ${esc(m.resist)}</p>` : ""}${m.vuln ? `<p><b>Vulnerable:</b> ${esc(m.vuln)}</p>` : ""}
+    ${list(m.abilities)}
+    ${m.instructions ? `<p class="ins">${esc(m.instructions)}</p>` : ""}
+    ${list(m.actions)}${members}
+    ${m.bloodied ? `<p class="bl"><b>Bloodied:</b> ${esc(m.bloodied)}</p>` : ""}
+    ${m.lastStand ? `<p class="ls"><b>Last Stand:</b> ${esc(m.lastStand)}</p>` : ""}
+    <div class="src"><a href="https://nimble.nexus/monsters/${esc(m.nid)}" target="_blank" rel="noopener">nimble.nexus</a></div>`;
+}
+
+async function loadStat(e) {
+  const id = e.items[0];
+  if (statCache.has(id)) return;
+  const [it] = await OBR.scene.items.getItems([id]);
+  if (it && it.metadata[MON_KEY]) statCache.set(id, it.metadata[MON_KEY]);
+  render();
+}
+
+// ---- actions ----
 async function handle(act, el) {
   const id = el.dataset.id;
+  if (act === "tab") { tab = el.dataset.t; render(); return; }
   if (act === "focus") {
     const e = find(state, id);
     if (!e) return;
@@ -101,69 +196,105 @@ async function handle(act, el) {
     try { await OBR.viewport.animateToBounds(await OBR.scene.items.getItemBounds(e.items)); } catch (_) {}
     return;
   }
+  if (act === "stat") {
+    const e = find(state, id);
+    if (openStat.has(id)) openStat.delete(id); else { openStat.add(id); if (e) loadStat(e); }
+    render();
+    return;
+  }
+  if (act.startsWith("lib")) return handleLib(act, el);
+  if (act === "dmg" || act === "heal") {
+    const inp = app.querySelector(`input[data-act=hpamt][data-id="${id}"]`);
+    const n = Math.abs(Number(inp && inp.value) || 0);
+    if (!n) return;
+    if (inp) inp.value = "";
+    inp && inp.blur();
+    await updateState((s) => {
+      const e = find(s, id);
+      if (!e) return false;
+      const tid = e.items[0];
+      const cur = hpOf(e, tid);
+      e.hp[tid] = act === "dmg" ? Math.max(0, cur - n) : Math.min(e.maxHp, cur + n);
+      if (act === "dmg" && e.kind === "legendary" && cur > e.maxHp / 2 && e.hp[tid] <= e.maxHp / 2) OBR.notification.show(`${e.name} is Bloodied!`, "WARNING");
+      if (act === "dmg" && e.kind === "legendary" && cur > 0 && e.hp[tid] === 0) OBR.notification.show(`${e.name}: Last Stand!`, "ERROR");
+    });
+    return;
+  }
   await updateState((s) => {
     const e = id ? find(s, id) : null;
     switch (act) {
       case "start":
-        s.started = true; s.round = 1; s.turn = 0;
-        for (const x of s.entries) { migrateEntry(x); x.pips = startingPips(x); resetMovement(x); }
+        s.started = true; s.round = 1; s.done = []; s.legQueue = []; s.active = null; s.phase = "pick";
+        rescaleLegendary(s);
+        for (const x of s.entries) { x.pips = startingPips(x); x.react = {}; resetMovement(x); }
+        { const n = nextUp(s); if (n) startTurn(s, n.id); }
         break;
       case "stop":
-        s.started = false; s.round = 0; s.turn = 0;
-        for (const x of s.entries) { migrateEntry(x); x.pips = freshPips(); resetMovement(x); x.init = null; }
+        s.started = false; s.round = 0; s.done = []; s.legQueue = []; s.active = null; s.phase = "pick";
+        for (const x of s.entries) { x.pips = isMonsterKind(x.kind) ? freshPips(x.nact) : freshPips(); x.react = {}; resetMovement(x); x.init = null; }
         break;
       case "clear":
         return Object.assign(s, emptyState());
       case "next": {
-        const cur = s.entries[s.turn];
-        if (cur) endTurnOf(cur);
-        s.turn += 1;
-        if (s.turn >= s.entries.length) { s.turn = 0; s.round += 1; }
-        break;
-      }
-      case "endturn":
-        if (!e) return false;
-        endTurnOf(e);
-        if (s.entries[s.turn] && s.entries[s.turn].id === e.id) {
-          s.turn += 1;
-          if (s.turn >= s.entries.length) { s.turn = 0; s.round += 1; }
+        if (s.active) finishTurn(s, s.active);
+        if (s.phase === "pick") {
+          let n = nextUp(s);
+          if (!n) { newRound(s); n = nextUp(s); }
+          if (n) startTurn(s, n.id);
         }
         break;
+      }
+      case "take":
+        if (!e || s.phase !== "pick" || s.done.includes(e.id)) return false;
+        startTurn(s, e.id);
+        break;
+      case "endturn":
+        if (!e || s.active !== e.id) return false;
+        finishTurn(s, e.id);
+        if (s.phase === "pick" && !nextUp(s)) newRound(s);
+        break;
       case "remove": {
-        const idx = s.entries.findIndex((x) => x.id === id);
-        if (idx < 0) return false;
-        s.entries.splice(idx, 1);
-        if (idx < s.turn) s.turn -= 1;
-        if (s.turn >= s.entries.length) s.turn = 0;
+        s.entries = s.entries.filter((x) => x.id !== id);
+        s.done = s.done.filter((x) => x !== id);
+        s.legQueue = s.legQueue.filter((x) => x !== id);
+        if (s.active === id) { s.active = s.legQueue[0] || null; if (!s.active) s.phase = "pick"; }
         break;
       }
       case "pip": {
         if (!e) return false;
         const i = Number(el.dataset.i);
-        e.pips[i] = NEXT_PIP[e.pips[i]] || "ready";
+        const p = e.pips[i];
+        if (p === "reaction") return false; // undo it from the reaction marker instead
+        e.pips[i] = p === "ready" ? "spent" : "ready";
         break;
       }
+      case "react":
+        if (!e || !toggleReaction(e, el.dataset.k)) return false;
+        break;
       case "init": {
         if (!e) return false;
         const n = Number(el.dataset.n);
         e.init = e.init === n ? null : n;
-        // Before anyone has acted in round 1, the choice reshapes the starting pips.
-        if (s.started && s.round === 1 && !e.pips.some((p) => p === "spent" || p === "reaction")) e.pips = startingPips(e);
+        if (s.started && s.round === 1 && !s.done.includes(e.id) && !e.pips.some((p) => p === "spent" || p === "reaction")) e.pips = startingPips(e);
         break;
       }
       case "move": {
         if (!e) return false;
         const i = e.pips.indexOf("ready");
-        if (i < 0) return false; // no actions left
-        migrateEntry(e);
+        if (i < 0) return false;
         e.pips[i] = "spent";
         e.budget += Number(e.speed) || 0;
         break;
       }
       case "mv":
         if (!e) return false;
-        migrateEntry(e);
         e.budget = Math.max(0, e.budget + Number(el.dataset.d));
+        break;
+      case "nact":
+        if (!e) return false;
+        e.nact = Math.max(1, Math.min(3, e.nact + Number(el.dataset.d)));
+        while (e.pips.length < e.nact) e.pips.push("ready");
+        e.pips.length = e.nact;
         break;
       default:
         return false;
@@ -171,14 +302,197 @@ async function handle(act, el) {
   });
 }
 
+// ================================================================ library
+const TYPES = [["all", "All"], ["standard", "Standard"], ["minion", "Minion"], ["legendary", "Legendary"]];
+
+function renderLibrary() {
+  const mons = Object.values(lib.monsters);
+  const q = libQuery.toLowerCase();
+  const lvl = (m) => (m.level === "1/4" ? 0.25 : m.level === "1/3" ? 0.33 : m.level === "1/2" ? 0.5 : Number(m.level) || 0);
+  const shown = mons.filter((m) => (libType === "all" || m.type === libType) && (!q || m.name.toLowerCase().includes(q)))
+    .sort((a, b) => lvl(a) - lvl(b) || a.name.localeCompare(b.name));
+  const targets = linkTargets && linkTargets.length ? linkTargets : selection;
+  const tgt = targets.length;
+  return `
+    <div class="libtop">
+      ${linkTargets ? `<div class="banner">Linking <b>${linkTargets.length}</b> token${linkTargets.length > 1 ? "s" : ""}: pick a monster below or paste a link. <button class="mini" data-act="libcancel">Cancel</button></div>`
+        : `<div class="muted small">${tgt ? `<b>${tgt}</b> token${tgt > 1 ? "s" : ""} selected on the map.` : "Select tokens on the map to link them."}</div>`}
+      <div class="paste"><input type="text" placeholder="Paste a nimble.nexus monster link" data-act="libpaste"><button data-act="libadd" class="primary">Add</button></div>
+      ${libMsg ? `<div class="msg">${libMsg}</div>` : ""}
+      ${!lib.gmg ? `<button class="gmg" data-act="libgmg" ${libBusy ? "disabled" : ""}>Load the Game Master's Guide monsters (${GMG_NAMES.length})</button>` : ""}
+      <div class="filters"><input type="search" placeholder="Search" value="${esc(libQuery)}" data-act="libq">
+        ${TYPES.map(([k, l]) => `<button class="chip ${libType === k ? "on" : ""}" data-act="libtype" data-k="${k}">${l}</button>`).join("")}</div>
+    </div>
+    <div class="liblist">${shown.length ? shown.map((m) => libRow(m, tgt)).join("") : `<div class="empty">${mons.length ? "No monsters match." : "Your library is empty. Load the GMG monsters or paste a link."}</div>`}</div>
+    <div class="libfoot">
+      <button data-act="libunlink" ${tgt ? "" : "disabled"} title="Remove the stat block from the selected tokens">Unlink selected</button>
+      <button data-act="libexport" title="Save your library as a file">Export</button>
+      <label class="imp">Import<input type="file" accept=".json,application/json" data-act="libimport"></label>
+      ${lib.gmg ? `<button data-act="libgmg" ${libBusy ? "disabled" : ""} title="Download the GMG monsters again">Refresh GMG</button>` : ""}
+    </div>`;
+}
+
+function libRow(m, tgt) {
+  const open = libOpen === m.nid;
+  return `<div class="lrow ${open ? "open" : ""}">
+    <div class="lhead">
+      <button class="lname" data-act="libopen" data-nid="${m.nid}" title="Show stat block">${esc(m.name)}</button>
+      <span class="badge">Lvl ${esc(m.level || "–")}</span>
+      ${m.type !== "standard" ? `<span class="badge ${m.type}">${cap(m.type)}</span>` : ""}
+      ${m.armor && m.armor !== "none" ? `<span class="badge armor ${m.armor}">${cap(m.armor)}</span>` : ""}
+      ${m.gmg ? `<span class="badge src">GMG</span>` : ""}
+      <span class="lbtns">
+        <button data-act="liblink" data-nid="${m.nid}" ${tgt ? "" : "disabled"} title="Link to the selected tokens">Link</button>
+        <button data-act="liblinkadd" data-nid="${m.nid}" ${tgt ? "" : "disabled"} title="Link, then add to the initiative">Link + Add</button>
+        ${m.gmg ? "" : `<button class="x" data-act="libdel" data-nid="${m.nid}" title="Remove from library">✕</button>`}
+      </span>
+    </div>
+    ${open ? `<div class="stat">${statHtml(m)}</div>` : ""}
+  </div>`;
+}
+
+async function linkTo(mon, add) {
+  const ids = linkTargets && linkTargets.length ? linkTargets : selection;
+  if (!ids.length) return;
+  const clean = { ...mon }; delete clean.gmg;
+  await OBR.scene.items.updateItems(ids, (ds) => { for (const d of ds) d.metadata[MON_KEY] = clean; });
+  for (const id of ids) statCache.set(id, clean);
+  // Entries already in the tracker pick the stat block up too.
+  await updateState((s) => {
+    let touched = false;
+    const heroCount = s.entries.filter((e) => e.kind === "hero").length;
+    for (const e of s.entries) {
+      if (e.kind === "hero" || !e.items.some((i) => ids.includes(i))) continue;
+      if (e.items.length === 1) e.kind = entryKindFor(clean);
+      if (e.kind === "minion" && e.items.length > 1 && clean.type !== "minion") continue;
+      applyMonster(e, clean, heroCount);
+      if (!s.started || s.active !== e.id) e.pips = freshPips(e.nact);
+      e.name = e.kind === "minion" && e.items.length > 1 ? `${clean.name} (minions)` : clean.name;
+      touched = true;
+    }
+    return touched ? s : false;
+  });
+  if (add) {
+    const items = await OBR.scene.items.getItems(ids);
+    await addTokens(items);
+    tab = "init";
+  }
+  OBR.notification.show(`Linked ${ids.length} token${ids.length > 1 ? "s" : ""} to ${mon.name}`);
+  linkTargets = null;
+  render();
+}
+
+async function handleLib(act, el) {
+  const nid = el.dataset.nid;
+  const mon = nid ? lib.monsters[nid] : null;
+  switch (act) {
+    case "libopen": libOpen = libOpen === nid ? null : nid; render(); return;
+    case "libtype": libType = el.dataset.k; render(); return;
+    case "libcancel": linkTargets = null; render(); return;
+    case "liblink": if (mon) await linkTo(mon, false); return;
+    case "liblinkadd": if (mon) await linkTo(mon, true); return;
+    case "libdel": delete lib.monsters[nid]; saveLibrary(lib); render(); return;
+    case "libadd": {
+      const inp = app.querySelector("input[data-act=libpaste]");
+      const nidNew = parseNexusId(inp && inp.value);
+      if (!nidNew) { libMsg = "That doesn't look like a nimble.nexus monster link."; render(); return; }
+      libMsg = "Fetching…"; render();
+      try {
+        const m = await fetchMonster(nidNew);
+        const prev = lib.monsters[m.nid];
+        lib.monsters[m.nid] = { ...m, gmg: prev ? prev.gmg : false };
+        saveLibrary(lib);
+        libMsg = `Added <b>${esc(m.name)}</b> to your library.`;
+        libOpen = m.nid; libQuery = "";
+        if (inp) inp.value = "";
+      } catch (err) { libMsg = `Couldn't fetch it: ${esc(err.message)}`; }
+      render();
+      return;
+    }
+    case "libgmg": {
+      libBusy = true;
+      let done = 0, found = 0;
+      const missing = [];
+      const queue = [...GMG_NAMES];
+      const worker = async () => {
+        while (queue.length) {
+          const name = queue.shift();
+          try {
+            const m = await findOfficial(name);
+            if (m) { lib.monsters[m.nid] = { ...m, gmg: true }; found++; } else missing.push(name);
+          } catch (_) { missing.push(name); }
+          done++;
+          libMsg = `Loading GMG monsters… ${done}/${GMG_NAMES.length}`;
+          render();
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+      lib.gmg = found > 0;
+      saveLibrary(lib);
+      libBusy = false;
+      libMsg = found ? `Loaded <b>${found}</b> GMG monsters.${missing.length ? ` Not found on nimble.nexus: ${esc(missing.join(", "))}.` : ""}` : "Couldn't reach nimble.nexus. Check your connection and try again.";
+      render();
+      return;
+    }
+    case "libunlink": {
+      const ids = linkTargets && linkTargets.length ? linkTargets : selection;
+      if (!ids.length) return;
+      await OBR.scene.items.updateItems(ids, (ds) => { for (const d of ds) delete d.metadata[MON_KEY]; });
+      for (const id of ids) statCache.delete(id);
+      await updateState((s) => {
+        for (const e of s.entries) if (e.items.some((i) => ids.includes(i))) { e.linked = false; }
+      });
+      OBR.notification.show("Unlinked");
+      return;
+    }
+    case "libexport": {
+      const blob = new Blob([JSON.stringify(lib, null, 1)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = "nimble-monster-library.json";
+      document.body.appendChild(a); a.click(); a.remove();
+      return;
+    }
+    default:
+  }
+}
+
+// ================================================================ events
 app.addEventListener("click", (ev) => {
   const el = ev.target.closest("[data-act]");
-  if (!el || el.disabled || el.tagName === "INPUT") return;
+  if (!el || el.disabled || el.tagName === "INPUT" || el.tagName === "LABEL") return;
   handle(el.dataset.act, el);
 });
-app.addEventListener("change", (ev) => {
+app.addEventListener("keydown", (ev) => {
+  const el = ev.target;
+  if (ev.key !== "Enter") return;
+  if (el.dataset.act === "libpaste") handleLib("libadd", el);
+  if (el.dataset.act === "hpamt") handle(ev.shiftKey ? "heal" : "dmg", el);
+});
+app.addEventListener("input", (ev) => {
+  const el = ev.target;
+  if (el.dataset.act === "libq") {
+    libQuery = el.value;
+    const list = app.querySelector(".liblist");
+    if (list) { const tmp = document.createElement("div"); tmp.innerHTML = renderLibrary(); list.replaceWith(tmp.querySelector(".liblist")); }
+  }
+});
+app.addEventListener("change", async (ev) => {
   const el = ev.target;
   if (el.dataset.act === "auto") { updateState((s) => { s.autoMove = el.checked; }); return; }
+  if (el.dataset.act === "libimport") {
+    const f = el.files && el.files[0];
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const n = Object.keys(data.monsters || {}).length;
+      Object.assign(lib.monsters, data.monsters || {});
+      lib.gmg = lib.gmg || !!data.gmg;
+      saveLibrary(lib);
+      libMsg = `Imported <b>${n}</b> monsters.`;
+    } catch (_) { libMsg = "That file isn't a monster library."; }
+    render();
+    return;
+  }
   if (el.dataset.act !== "speed") return;
   const v = Math.max(0, Math.min(99, Number(el.value) || 0));
   updateState((s) => { const e = find(s, el.dataset.id); if (!e) return false; e.speed = v; });
@@ -186,32 +500,30 @@ app.addEventListener("change", (ev) => {
 
 // ---- drag to reorder (GM) ----
 app.addEventListener("dragstart", (ev) => {
-  const row = ev.target.closest(".row");
-  if (!row) return;
-  dragId = row.dataset.id;
-  row.classList.add("dragging");
+  const r = ev.target.closest(".row");
+  if (!r) return;
+  dragId = r.dataset.id;
+  r.classList.add("dragging");
   ev.dataTransfer.effectAllowed = "move";
 });
 app.addEventListener("dragend", () => { dragId = null; app.querySelectorAll(".row").forEach((r) => r.classList.remove("dragging", "over")); });
 app.addEventListener("dragover", (ev) => {
-  const row = ev.target.closest(".row");
-  if (!row || !dragId) return;
+  const r = ev.target.closest(".row");
+  if (!r || !dragId) return;
   ev.preventDefault();
-  app.querySelectorAll(".row.over").forEach((r) => r.classList.remove("over"));
-  if (row.dataset.id !== dragId) row.classList.add("over");
+  app.querySelectorAll(".row.over").forEach((x) => x.classList.remove("over"));
+  if (r.dataset.id !== dragId) r.classList.add("over");
 });
 app.addEventListener("drop", (ev) => {
-  const row = ev.target.closest(".row");
-  if (!row || !dragId || row.dataset.id === dragId) return;
+  const r = ev.target.closest(".row");
+  if (!r || !dragId || r.dataset.id === dragId) return;
   ev.preventDefault();
-  const from = dragId, to = row.dataset.id;
+  const from = dragId, to = r.dataset.id;
   updateState((s) => {
-    const current = s.entries[s.turn] ? s.entries[s.turn].id : null;
     const fi = s.entries.findIndex((e) => e.id === from);
     const [moved] = s.entries.splice(fi, 1);
     const ti = s.entries.findIndex((e) => e.id === to);
     s.entries.splice(fi <= ti ? ti + 1 : ti, 0, moved);
-    if (current) s.turn = Math.max(0, s.entries.findIndex((e) => e.id === current));
   });
 });
 
@@ -226,11 +538,31 @@ function applyTheme(t) {
   document.documentElement.dataset.mode = t.mode;
 }
 
+function checkOpenRequest() {
+  try {
+    const v = JSON.parse(localStorage.getItem(OPEN_KEY) || "null");
+    if (v && Date.now() - v.t < 15000) {
+      localStorage.removeItem(OPEN_KEY);
+      tab = v.tab === "library" ? "lib" : "init";
+      linkTargets = v.items || null;
+      render();
+    }
+  } catch (_) {}
+}
+window.addEventListener("storage", (ev) => { if (ev.key === OPEN_KEY) checkOpenRequest(); });
+setInterval(checkOpenRequest, 700); // same-window fallback (the storage event only fires in other windows)
+
 OBR.onReady(async () => {
   role = await OBR.player.getRole();
   applyTheme(await OBR.theme.getTheme());
   OBR.theme.onChange(applyTheme);
-  OBR.player.onChange((p) => { if (p.role !== role) { role = p.role; render(); } });
+  try { selection = (await OBR.player.getSelection()) || []; } catch (_) {}
+  OBR.player.onChange((p) => {
+    const sel = p.selection || [];
+    const selChanged = sel.join() !== selection.join();
+    selection = sel;
+    if (p.role !== role) { role = p.role; render(); } else if (selChanged && tab === "lib") render();
+  });
 
   const load = async () => {
     if (!(await OBR.scene.isReady())) {
@@ -238,10 +570,15 @@ OBR.onReady(async () => {
       return;
     }
     const md = await OBR.scene.getMetadata();
-    state = md[STATE_KEY] || emptyState();
+    state = migrateState(md[STATE_KEY] ? structuredClone(md[STATE_KEY]) : emptyState());
     render();
+    checkOpenRequest();
   };
   OBR.scene.onReadyChange(load);
-  OBR.scene.onMetadataChange((md) => { state = md[STATE_KEY] || emptyState(); render(); });
+  OBR.scene.onMetadataChange((md) => {
+    state = migrateState(md[STATE_KEY] ? structuredClone(md[STATE_KEY]) : emptyState());
+    for (const id of openStat) { const e = find(state, id); if (e && !statCache.has(e.items[0])) loadStat(e); }
+    render();
+  });
   load();
 });

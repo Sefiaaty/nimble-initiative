@@ -5,6 +5,7 @@ import {
   emptyState, migrateState, updateState, startingPips, freshPips, movesLeft, resetMovement,
   startTurn, finishTurn, nextUp, newRound, actors, toggleReaction, hpOf, isMonsterKind,
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
+  clean, tempOf, damage, giveTemp, jumpTo,
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -29,7 +30,7 @@ const PIP_TIP = { ready: "Ready", spent: "Spent", reaction: "Used on a reaction"
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const isGM = () => role === "GM";
-const canEdit = (e) => isGM() || e.kind === "hero";
+const canEdit = () => isGM(); // the GM runs the whole tracker
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 const find = (s, id) => s.entries.find((e) => e.id === id);
 
@@ -38,6 +39,7 @@ function render() {
   const a = document.activeElement;
   if (a && app.contains(a) && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && a.type !== "checkbox") { pendingRender = true; return; }
   pendingRender = false;
+  if (!isGM()) { app.innerHTML = `<div class="empty">The GM is running the initiative tracker.</div>`; return; }
   app.innerHTML = (isGM() ? `<nav class="tabs"><button class="${tab === "init" ? "on" : ""}" data-act="tab" data-t="init">Initiative</button><button class="${tab === "lib" ? "on" : ""}" data-act="tab" data-t="lib">Monster Library</button></nav>` : "")
     + (tab === "lib" && isGM() ? renderLibrary() : renderInit());
 }
@@ -84,11 +86,12 @@ function hpBlock(e) {
   const id = e.items[0];
   const hp = hpOf(e, id);
   const pct = Math.max(0, Math.min(100, (hp / e.maxHp) * 100));
+  const tmp = tempOf(e, id);
   if (!isGM()) return "";
   return `<div class="hp">
-    <div class="bar"><div class="fill ${hp <= e.maxHp / 2 ? "low" : ""}" style="width:${pct}%"></div><span>${hp} / ${e.maxHp} HP</span></div>
-    <input type="number" min="0" placeholder="0" data-act="hpamt" data-id="${e.id}" title="Amount">
-    <button data-act="dmg" data-id="${e.id}" title="Take damage">−</button><button data-act="heal" data-id="${e.id}" title="Heal">+</button>
+    <div class="bar"><div class="fill ${hp <= e.maxHp / 2 ? "low" : ""}" style="width:${pct}%"></div>${tmp ? `<div class="tmpfill" style="width:${Math.min(100, (tmp / e.maxHp) * 100)}%"></div>` : ""}<span>${hp} / ${e.maxHp} HP${tmp ? ` <em>+${tmp} temp</em>` : ""}</span></div>
+    <input type="number" min="0" placeholder="0" data-act="hpamt" data-id="${e.id}" title="Amount (Enter = damage, Shift+Enter = heal)">
+    <button data-act="dmg" data-id="${e.id}" title="Take damage (temp HP goes first)">−</button><button data-act="heal" data-id="${e.id}" title="Heal">+</button><button class="tmpb" data-act="temp" data-id="${e.id}" title="Give temp HP (doesn't stack: keeps the higher)">T</button>
   </div>`;
 }
 
@@ -133,10 +136,11 @@ function row(e) {
         <span class="left ${left < 0 ? "over" : ""}" title="${left < 0 ? "Moved further than its Move actions allow" : "Spaces of movement left"}">${left}</span>
         <button data-act="mv" data-d="1" data-id="${e.id}" ${edit ? "" : "disabled"}>+</button>
         <label title="Spaces per Move action">spd <input type="number" min="0" max="99" value="${e.speed}" data-act="speed" data-id="${e.id}" ${edit ? "" : "disabled"}></label></div>`;
-  const canStart = s.started && s.phase === "pick" && !done && e.kind !== "legendary" && (gm || e.kind === "hero");
+  const canStart = s.started && e.kind !== "legendary";
+  const queued = s.pendingNext === e.id;
   const turnBtn = active
-    ? `<button class="endturn" data-act="endturn" data-id="${e.id}" ${edit ? "" : "disabled"}>${s.phase === "legendary" ? "Done" : "End turn"}</button>`
-    : canStart ? `<button class="taketurn ${e.kind === "hero" ? "" : "mon"}" data-act="take" data-id="${e.id}" title="${e.kind === "hero" ? "Start this hero's turn" : "Let this monster act now (e.g. an ambush)"}">▶ ${e.kind === "hero" ? "Take turn" : "Act now"}</button>` : "";
+    ? `<button class="endturn" data-act="endturn" data-id="${e.id}">${s.phase === "legendary" ? "Done" : "End turn"}</button>`
+    : canStart ? `<button class="taketurn ${done ? "mon" : ""}" data-act="take" data-id="${e.id}" title="${s.active ? "Ends the current turn, then this one goes" : "Start this turn now"}">${queued ? "⏳ Up next" : `▶ ${done ? "Go again" : e.kind === "hero" ? "Take turn" : "Act now"}`}</button>` : "";
   const nactCtl = mon && gm && e.kind !== "legendary" ? `<span class="nact"><button data-act="nact" data-d="-1" data-id="${e.id}" title="Fewer actions">−</button><button data-act="nact" data-d="1" data-id="${e.id}" title="More actions">+</button></span>` : "";
   return `
   <div class="row ${active ? "active" : ""} ${done ? "done" : ""} ${e.kind}" data-id="${e.id}" ${gm ? 'draggable="true"' : ""}>
@@ -145,7 +149,7 @@ function row(e) {
     <div class="body">
       <div class="top">
         ${dot}<button class="name" data-act="focus" data-id="${e.id}" title="Show on map">${esc(e.name)}</button>${count}
-        ${done && s.started ? `<span class="acted" title="Has acted this round">✓</span>` : ""}
+        ${s.started && e.kind !== "legendary" && !active ? `<button class="acted ${done ? "on" : ""}" data-act="toggledone" data-id="${e.id}" title="${done ? "Has acted this round (click: hasn't acted)" : "Hasn't acted yet (click: mark as acted)"}">${done ? "✓" : "○"}</button>` : ""}
         <span class="badges">${statusBadges(e)}</span>
         ${gm && e.linked ? `<button class="sb ${openStat.has(e.id) ? "on" : ""}" data-act="stat" data-id="${e.id}" title="Stat block">≡</button>` : ""}
         ${gm ? `<button class="x" data-act="remove" data-id="${e.id}" title="Remove from list">✕</button>` : ""}
@@ -164,16 +168,17 @@ function statHtml(m) {
   if (!m) return `<div class="muted">Loading…</div>`;
   const moves = (m.moves || []).map((x) => `${x.mode ? cap(x.mode) + " " : ""}${x.speed}`).join(", ") || m.speed;
   const saves = m.saves ? Object.entries(m.saves).map(([k, v]) => `${k.toUpperCase()}${v > 0 ? "+".repeat(v) : "–".repeat(-v)}`).join(" ") : "";
-  const list = (arr) => arr.map((x) => `<p><b>${esc(x.name)}${x.count > 1 ? ` (${x.count}×)` : ""}.</b> ${esc(x.desc)}</p>`).join("");
+  const list = (arr) => arr.map((x) => `<p><b>${esc(clean(x.name))}${x.count > 1 ? ` (${x.count}×)` : ""}.</b> ${esc(clean(x.desc))}</p>`).join("");
   const members = (m.members || []).map((mm) => `<div class="member"><div class="mh">${esc(mm.name)}${mm.hpPerHero ? ` · ${mm.hpPerHero}/hero HP` : mm.hp ? ` · ${mm.hp} HP` : ""}${mm.armor && mm.armor !== "none" ? ` · ${cap(mm.armor)} armor` : ""}</div>${list(mm.abilities)}${list(mm.actions)}</div>`).join("");
   return `
     <div class="sh">Lvl ${esc(m.level || "–")} ${esc(cap(m.size))} ${esc(m.kind)} · ${m.hpPerHero ? `${m.hpPerHero}/hero` : m.hp} HP · ${cap(m.armor === "none" ? "no" : m.armor)} armor · Speed ${esc(moves)}${saves ? ` · Saves ${esc(saves)}` : ""}</div>
     ${m.resist ? `<p><b>Resists:</b> ${esc(m.resist)}</p>` : ""}${m.vuln ? `<p><b>Vulnerable:</b> ${esc(m.vuln)}</p>` : ""}
     ${list(m.abilities)}
-    ${m.instructions ? `<p class="ins">${esc(m.instructions)}</p>` : ""}
+    ${m.instructions ? `<p class="ins">${esc(clean(m.instructions))}</p>` : ""}
     ${list(m.actions)}${members}
-    ${m.bloodied ? `<p class="bl"><b>Bloodied:</b> ${esc(m.bloodied)}</p>` : ""}
-    ${m.lastStand ? `<p class="ls"><b>Last Stand:</b> ${esc(m.lastStand)}</p>` : ""}
+    ${m.bloodied ? `<p class="bl"><b>Bloodied:</b> ${esc(clean(m.bloodied))}</p>` : ""}
+    ${m.lastStand ? `<p class="ls"><b>Last Stand:</b> ${esc(clean(m.lastStand))}</p>` : ""}
+    ${m.type === "minion" ? `<p class="rules"><b>Minion rules:</b> any damage kills one. Attacks use a single die, can't crit, miss on a 1 and ignore advantage and disadvantage. Minions attacking the same hero add their damage into one attack (Defend or Interpose once against all of it).</p>` : ""}
     <div class="src"><a href="https://nimble.nexus/monsters/${esc(m.nid)}" target="_blank" rel="noopener">nimble.nexus</a></div>`;
 }
 
@@ -203,7 +208,7 @@ async function handle(act, el) {
     return;
   }
   if (act.startsWith("lib")) return handleLib(act, el);
-  if (act === "dmg" || act === "heal") {
+  if (act === "dmg" || act === "heal" || act === "temp") {
     const inp = app.querySelector(`input[data-act=hpamt][data-id="${id}"]`);
     const n = Math.abs(Number(inp && inp.value) || 0);
     if (!n) return;
@@ -214,7 +219,8 @@ async function handle(act, el) {
       if (!e) return false;
       const tid = e.items[0];
       const cur = hpOf(e, tid);
-      e.hp[tid] = act === "dmg" ? Math.max(0, cur - n) : Math.min(e.maxHp, cur + n);
+      if (act === "temp") { giveTemp(e, tid, n); return; }
+      if (act === "dmg") damage(e, tid, n); else e.hp[tid] = Math.min(e.maxHp, cur + n);
       if (act === "dmg" && e.kind === "legendary" && cur > e.maxHp / 2 && e.hp[tid] <= e.maxHp / 2) OBR.notification.show(`${e.name} is Bloodied!`, "WARNING");
       if (act === "dmg" && e.kind === "legendary" && cur > 0 && e.hp[tid] === 0) OBR.notification.show(`${e.name}: Last Stand!`, "ERROR");
     });
@@ -245,8 +251,12 @@ async function handle(act, el) {
         break;
       }
       case "take":
-        if (!e || s.phase !== "pick" || s.done.includes(e.id)) return false;
-        startTurn(s, e.id);
+        if (!e || e.kind === "legendary" || s.active === e.id) return false;
+        jumpTo(s, e.id);
+        break;
+      case "toggledone":
+        if (!e) return false;
+        if (s.done.includes(e.id)) s.done = s.done.filter((x) => x !== e.id); else s.done.push(e.id);
         break;
       case "endturn":
         if (!e || s.active !== e.id) return false;

@@ -68,7 +68,7 @@ button:disabled{cursor:default;opacity:.55}
 .badge.bloodied{background:#b3261e;color:#fff}
 .badge.dying{background:#3a0d0d;color:#ff8a80;border:1px solid #b3261e}
 .badge.src{background:color-mix(in srgb,var(--fg) 8%,transparent)}
-.acted{color:var(--ready);font-weight:700;font-size:14px}
+.acted{font-weight:700}
 .dot{width:10px;height:10px;border-radius:50%;flex:0 0 10px}
 .sb{color:var(--fg2);font-size:15px;line-height:1;padding:0 4px;margin-left:auto}
 .sb.on{color:var(--accent)}
@@ -117,3 +117,9 @@ button:disabled{cursor:default;opacity:.55}
 .libfoot{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .libfoot button,.libfoot .imp{font-size:13.5px;padding:4px 10px;border-radius:12px;background:color-mix(in srgb,var(--fg) 10%,transparent);cursor:pointer}
 .imp input{display:none}
+.hp .tmpfill{position:absolute;inset:0 auto 0 0;background:repeating-linear-gradient(135deg,#4fc3f7cc 0 6px,#4fc3f788 6px 12px);opacity:.75}
+.hp .bar em{font-style:normal;color:#b3e5fc}
+.hp .tmpb{background:color-mix(in srgb,#4fc3f7 30%,transparent);font-size:12px}
+button.acted{color:var(--fg2);font-size:14px;line-height:1;padding:0 3px}
+button.acted.on{color:var(--ready)}
+.stat .rules{color:var(--fg2);font-size:13.5px}

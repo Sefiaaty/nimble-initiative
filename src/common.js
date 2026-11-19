@@ -20,7 +20,7 @@ export const REACTIONS = [
 export const GROUP_COLORS = ["#ff5d5d", "#4fc3f7", "#ffd54f", "#81c784", "#ba68c8", "#ff9f43"];
 
 export function emptyState() {
-  return { v: 2, entries: [], round: 0, started: false, autoMove: true, phase: "pick", active: null, done: [], legQueue: [] };
+  return { v: 2, entries: [], round: 0, started: false, autoMove: true, phase: "pick", active: null, done: [], legQueue: [], pendingNext: null };
 }
 
 export function migrateState(s) {
@@ -128,6 +128,7 @@ export function migrateEntry(e) {
   delete e.moveLeft;
   if (!e.react) e.react = {};
   if (!e.hp) e.hp = {};
+  if (!e.temp) e.temp = {};
   if (e.nact === undefined) e.nact = 1;
   if (e.maxHp === undefined) e.maxHp = 0;
   if (e.armor === undefined) e.armor = "";
@@ -191,6 +192,16 @@ export function rescaleLegendary(s) {
 }
 
 export const hpOf = (e, id) => (e.hp && e.hp[id] !== undefined ? e.hp[id] : e.maxHp);
+export const tempOf = (e, id) => (e.temp && e.temp[id]) || 0;
+
+// Damage eats temp HP first. Temp HP doesn't stack: keep the higher amount.
+export function damage(e, id, n) {
+  const t = tempOf(e, id);
+  const soak = Math.min(t, n);
+  e.temp[id] = t - soak;
+  e.hp[id] = Math.max(0, hpOf(e, id) - (n - soak));
+}
+export function giveTemp(e, id, n) { e.temp[id] = Math.max(tempOf(e, id), n); }
 
 // ---------- turn flow ----------
 const legendaries = (s) => s.entries.filter((e) => e.kind === "legendary");
@@ -215,6 +226,7 @@ export function finishTurn(s, id) {
       onTurnStart(s.entries.find((x) => x.id === s.active));
     } else {
       s.active = null; s.phase = "pick";
+      startPending(s);
     }
     return;
   }
@@ -228,7 +240,25 @@ export function finishTurn(s, id) {
     onTurnStart(legs[0]);
   } else {
     s.active = null; s.phase = "pick";
+    startPending(s);
   }
+}
+
+function startPending(s) {
+  const id = s.pendingNext;
+  s.pendingNext = null;
+  if (id && s.entries.some((e) => e.id === id)) { s.done = s.done.filter((x) => x !== id); startTurn(s, id); }
+}
+
+// GM jumps someone to the front: the current turn ends first (and any legendary steps happen), then theirs starts.
+export function jumpTo(s, id) {
+  s.done = s.done.filter((x) => x !== id);
+  if (s.active && s.active !== id) {
+    s.pendingNext = id;
+    if (s.phase === "turn") finishTurn(s, s.active);
+    return;
+  }
+  if (!s.active) startTurn(s, id);
 }
 
 // Who goes next when the GM presses Next: heroes first (in list order), then everyone else.
@@ -280,12 +310,18 @@ export function actionCount(attrs) {
   return Math.max(1, Math.min(n, 3));
 }
 
+// nimble.nexus text markup: [[Prone]], [[slug|Label]], @rule:[minions|minion rules] -> plain words.
+export const clean = (t) => String(t || "")
+  .replace(/@[a-z]+:\[([^\]|]+)\|([^\]]+)\]/gi, "$2")
+  .replace(/@[a-z]+:\[([^\]]+)\]/gi, "$1")
+  .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
+  .replace(/\[\[([^\]]+)\]\]/g, "$1");
+
 // Compact stat block kept on tokens and in the library.
 export function compactMonster(id, a) {
   const moves = (a.movement || []).map((m) => ({ mode: m.mode || "", speed: m.speed }));
   const walk = moves.find((m) => !m.mode);
   const type = a.legendary ? "legendary" : a.minion ? "minion" : "standard";
-  const clean = (t) => String(t || "").replace(/\[\[([^\]|]+)(\|[^\]]*)?\]\]/g, "$1");
   const dist = (t) => (!t ? "" : t.reach ? `Reach ${t.reach}` : t.range ? `Range ${t.range}` : t.aura ? `Aura ${t.aura}` : "");
   const act = (x) => {
     let d = clean(x.description);

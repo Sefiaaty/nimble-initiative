@@ -30,6 +30,7 @@ let own = { hand: false, brb: false };
 try { own = { ...own, ...JSON.parse(localStorage.getItem(OWN_PREF) || "{}") }; } catch (_) {}
 let mic = { state: "off", stream: null, ctx: null, timer: null, on: false, sentAt: 0, note: "" };
 let openUi = null;           // "emote" | "say" | "whisper" | { read: pid } | { frame: url }
+const micOnAt = new Map();   // pid -> when their talking light came on (the quiet timer can't start before that)
 let draft = null;            // GM framing a picture: { u, x, y, z } (x/y in % of the card width)
 let gmBell = false;          // GM has enabled ping sounds (needs a click first)
 let audio = null;
@@ -124,8 +125,8 @@ function render() {
     const isTalking = pid && talking.has(pid) && now - talking.get(pid) < 2500;
     const brb = s && s.brb;
     const hand = s && s.hand;
-    const quietFor = pid ? Math.floor((now - (lastTalk.get(pid) || started)) / 60000) : 0;
-    const quietLong = gm && pid && !brb && quietFor >= QUIET_MIN;
+    const quietFor = pid ? Math.floor((now - Math.max(lastTalk.get(pid) || started, micOnAt.get(pid) || 0)) / 60000) : 0;
+    const quietLong = gm && pid && s && s.mic && !brb && quietFor >= QUIET_MIN; // only when we can actually hear them
     const em = pid && emotes.get(pid);
     const say = pid && says.get(pid);
     const wh = gm && pid && (whispers.get(pid) || []).length;
@@ -458,6 +459,7 @@ function onEvent(d) {
     case "st": {
       const prev = states.get(pid);
       if (isGM() && d.hand && !(prev && prev.hand) && pid !== me.id) { gmPing("hand"); bump(pid, "hands"); }
+      if (d.mic && !(prev && prev.mic)) micOnAt.set(pid, now);
       states.set(pid, { mic: !!d.mic, brb: !!d.brb, hand: !!d.hand, at: now });
       break;
     }

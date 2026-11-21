@@ -150,7 +150,7 @@ function render() {
       ${say && now - say.at < Math.min(16000, 6000 + say.text.length * 60) ? `<div class="say">${esc(say.text)}</div>` : ""}
       ${askNext === pid ? `<div class="asknext">▼ ask next</div>` : ""}
       ${em && now - em.at < 3500 ? `<div class="emote" data-at="${em.at}">${esc(em.e)}</div>` : ""}
-      <div class="frame"><div class="art" style="background-image:url('${esc(m.portrait || u)}')"></div>${icon}
+      <div class="frame" title="${esc(name)}${m.pname ? " (" + esc(m.pname) + ")" : ""}"><div class="art" style="background-image:url('${esc(m.portrait || u)}')"></div><img class="cut" src="${esc(m.portrait || u)}" alt="" draggable="false">${icon}
         ${hand ? `<button class="hand" data-act="lower" data-pid="${esc(pid)}" title="${mine ? "Lower your hand" : gm ? "Lower their hand" : "Hand raised"}">!</button>` : ""}
         ${wh ? `<button class="mail" data-act="read" data-pid="${esc(pid)}" title="Whisper from ${esc(name)}">✉${wh > 1 ? wh : ""}</button>` : ""}
         ${insp ? `<button class="insp" data-act="spend" data-url="${esc(u)}" title="${mine ? "Spend Inspiration (click twice)" : "Inspiration"}">✦${insp > 1 ? insp : ""}</button>` : ""}

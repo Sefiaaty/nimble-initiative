@@ -87,3 +87,27 @@ body.cutouts .card.nudge .art{animation:cutpulse .7s ease-in-out 4}
 body.cutouts .card.talk .frame{border:0}
 body.cutouts .badge{z-index:5}
 body.cutouts .name{position:relative;z-index:4}
+
+/* cut-outs sit right on the bottom edge, no name plates, soft fade at the top of the art */
+body.cutouts #bar{padding-bottom:0;gap:0}
+body.cutouts .name,body.cutouts .player{display:none}
+body.cutouts .frame{height:calc(var(--w)*1.4)}
+body.cutouts .art{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 22%);mask-image:linear-gradient(to bottom,transparent 0,#000 22%)}
+body.cutouts .card.talk{transform:translateY(-8px)}
+body.cutouts .air{position:absolute;left:18%;right:18%;bottom:2px;margin:0;z-index:4}
+body.cutouts .nomic{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);margin:0;z-index:4}
+body.cutouts .card.mine .air,body.cutouts .card.mine .nomic{display:none}
+
+/* cut-outs drawn as an <img> so the top fade follows the picture itself */
+.cut{display:none}
+body.cutouts .art{display:none}
+body.cutouts .cut{display:block;position:absolute;left:50%;bottom:0;transform:translateX(-50%);max-width:156%;max-height:100%;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 24%);mask-image:linear-gradient(to bottom,transparent 0,#000 24%);
+  filter:brightness(.38) saturate(.45);transition:filter .25s ease;pointer-events:none}
+body.cutouts .card.talk .cut{filter:brightness(1.06) saturate(1.08) drop-shadow(0 0 4px rgba(255,214,110,.9))}
+body.cutouts .card.turn .cut{filter:brightness(.7) saturate(.8)}
+body.cutouts .card.talk.turn .cut{filter:brightness(1.06) saturate(1.08) drop-shadow(0 0 4px rgba(255,214,110,.9))}
+body.cutouts .card.brb .cut{filter:grayscale(1) brightness(.3)}
+body.cutouts .card.lowair .cut{filter:brightness(.45) saturate(.5) drop-shadow(0 0 4px rgba(79,195,247,.95))}
+body.cutouts .card.nudge .cut{animation:cutpulse .7s ease-in-out 4}
+body.cutouts .badge{display:none}

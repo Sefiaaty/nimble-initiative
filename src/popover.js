@@ -370,7 +370,7 @@ function renderParty() {
       <label class="auto">Bar style <select data-act="ptystyle">
         <option value="cards" ${p.style !== "cutouts" ? "selected" : ""}>Portrait cards</option>
         <option value="cutouts" ${p.style === "cutouts" ? "selected" : ""}>Cut-outs (character PNGs, dim until they talk)</option></select></label>
-      <label class="auto" title="If there's a gap under the bar, raise this until it's gone">Bottom offset
+      <label class="auto" title="Pushes the pictures down past the bottom edge so the screen cuts them">Sink below edge
         <button data-act="ptyoff" data-d="-4">−</button><b>${p.offset}px</b><button data-act="ptyoff" data-d="4">+</button></label>
       <div class="muted small">Heroes come from <b>Mark as Hero</b>. Pick each hero's player so their card lights up when they talk: each player turns on the 🎙 button on their own card.</div>
     </div>
@@ -417,7 +417,7 @@ async function handleParty(act, el) {
     });
   }
   if (act === "ptyhide") await saveParty((p) => { mem(p).hidden = !mem(p).hidden; });
-  if (act === "ptyoff") await saveParty((p) => { p.offset = Math.max(-100, Math.min(200, p.offset + Number(el.dataset.d))); });
+  if (act === "ptyoff") await saveParty((p) => { p.offset = Math.max(0, Math.min(80, p.offset + Number(el.dataset.d))); });
   if (act === "ptyreset") {
     if (!confirmReset) { confirmReset = true; render(); setTimeout(() => { confirmReset = false; render(); }, 4000); return; }
     confirmReset = false;

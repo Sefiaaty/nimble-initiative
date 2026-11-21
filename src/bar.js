@@ -101,6 +101,10 @@ function render() {
   const urls = partyList(roomMd);
   const w = cardWidth(urls.length);
   document.body.classList.toggle("cutouts", p.style === "cutouts");
+  // sink the pictures below the bottom edge so the screen edge cuts them
+  const sink = Math.max(0, Math.min(80, p.offset)) + "px";
+  if (bar.style.bottom !== "-" + sink && sink !== "0px") bar.style.bottom = "-" + sink;
+  else if (sink === "0px" && bar.style.bottom) bar.style.bottom = "";
   const now = Date.now();
   const gm = isGM();
   // who is "quiet": players with a working mic, here (not BRB), ranked by airtime

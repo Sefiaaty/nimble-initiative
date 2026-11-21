@@ -14,7 +14,7 @@ export const TALK_CH = `${ID}/talk`;      // broadcast channel: who is talking
 export const CLASSES = ["Berserker", "Commander", "Hunter", "Mage", "Oathsworn", "Shadowmancer", "Shepherd", "Songweaver", "Stormshifter", "The Cheat", "Zephyr"];
 export function partyOf(md) {
   const p = (md && md[PARTY_KEY]) || {};
-  return { show: p.show !== false, style: p.style === "cutouts" ? "cutouts" : "cards", offset: Number.isFinite(Number(p.offset)) ? Number(p.offset) : 16, members: p.members || {}, order: Array.isArray(p.order) ? p.order : [] };
+  return { show: p.show !== false, style: p.style === "cutouts" ? "cutouts" : "cards", offset: Number.isFinite(Number(p.offset)) ? Number(p.offset) : 0, members: p.members || {}, order: Array.isArray(p.order) ? p.order : [] };
 }
 // Heroes in bar order: saved order first, then any new ones; hidden ones left out.
 export function partyList(md) {

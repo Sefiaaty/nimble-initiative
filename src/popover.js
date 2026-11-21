@@ -6,6 +6,7 @@ import {
   startTurn, finishTurn, nextUp, newRound, actors, toggleReaction, hpOf, isMonsterKind,
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
   clean, tempOf, damage, giveTemp, jumpTo,
+  PARTY_KEY, HEROES_KEY, CLASSES, partyOf, partyList, isHero, itemName,
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -40,8 +41,8 @@ function render() {
   if (a && app.contains(a) && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && a.type !== "checkbox") { pendingRender = true; return; }
   pendingRender = false;
   if (!isGM()) { app.innerHTML = `<div class="empty">The GM is running the initiative tracker.</div>`; return; }
-  app.innerHTML = (isGM() ? `<nav class="tabs"><button class="${tab === "init" ? "on" : ""}" data-act="tab" data-t="init">Initiative</button><button class="${tab === "lib" ? "on" : ""}" data-act="tab" data-t="lib">Monster Library</button></nav>` : "")
-    + (tab === "lib" && isGM() ? renderLibrary() : renderInit());
+  app.innerHTML = (isGM() ? `<nav class="tabs"><button class="${tab === "init" ? "on" : ""}" data-act="tab" data-t="init">Initiative</button><button class="${tab === "lib" ? "on" : ""}" data-act="tab" data-t="lib">Monster Library</button><button class="${tab === "party" ? "on" : ""}" data-act="tab" data-t="party">Party</button></nav>` : "")
+    + (tab === "lib" && isGM() ? renderLibrary() : tab === "party" && isGM() ? renderParty() : renderInit());
 }
 app.addEventListener("focusout", () => setTimeout(() => { if (pendingRender) render(); }, 0));
 
@@ -202,7 +203,7 @@ async function loadStat(e) {
 // ---- actions ----
 async function handle(act, el) {
   const id = el.dataset.id;
-  if (act === "tab") { tab = el.dataset.t; render(); return; }
+  if (act === "tab") { tab = el.dataset.t; if (tab === "party") await loadHeroNames(); render(); return; }
   if (act === "focus") {
     const e = find(state, id);
     if (!e) return;
@@ -217,6 +218,7 @@ async function handle(act, el) {
     return;
   }
   if (act.startsWith("lib")) return handleLib(act, el);
+  if (act.startsWith("pty")) return handleParty(act, el);
   if (act === "dmg" || act === "heal" || act === "temp") {
     const inp = app.querySelector(`input[data-act=hpamt][data-id="${id}"]`);
     const n = Math.abs(Number(inp && inp.value) || 0);
@@ -328,6 +330,87 @@ async function handle(act, el) {
         return false;
     }
   });
+}
+
+// ================================================================ party bar settings
+let roomMd = {};
+let players = [];
+let heroNames = new Map(); // image url -> token name in this scene
+
+function renderParty() {
+  const p = partyOf(roomMd);
+  const heroes = Array.isArray(roomMd[HEROES_KEY]) ? roomMd[HEROES_KEY] : [];
+  const ordered = [...p.order.filter((u) => heroes.includes(u)), ...heroes.filter((u) => !p.order.includes(u))];
+  const rows = ordered.map((u, i) => {
+    const m = p.members[u] || {};
+    const nm = m.name || heroNames.get(u) || "";
+    return `<div class="prow ${m.hidden ? "hid" : ""}" data-url="${esc(u)}">
+      <img src="${esc(m.portrait || u)}" alt="">
+      <div class="pf">
+        <input type="text" placeholder="${esc(heroNames.get(u) || "Character name")}" value="${esc(m.name || "")}" data-act="ptyname" data-url="${esc(u)}" title="Character name (blank = token name)">
+        <div class="pr2">
+          <select data-act="ptycls" data-url="${esc(u)}" title="Class icon"><option value="">Class…</option>${CLASSES.map((c) => `<option ${m.cls === c ? "selected" : ""}>${c}</option>`).join("")}</select>
+          <select data-act="ptypid" data-url="${esc(u)}" title="Which player plays this hero (their card lights up when they talk)"><option value="">Player…</option>${players.map((pl) => `<option value="${esc(pl.id)}" ${m.pid === pl.id ? "selected" : ""}>${esc(pl.name)}</option>`).join("")}${m.pid && !players.some((pl) => pl.id === m.pid) ? `<option value="${esc(m.pid)}" selected>${esc(m.pname || "Offline player")}</option>` : ""}</select>
+        </div>
+        <input type="text" placeholder="Portrait image link (optional)" value="${esc(m.portrait || "")}" data-act="ptyport" data-url="${esc(u)}">
+      </div>
+      <div class="pbtns">
+        <button data-act="ptyup" data-url="${esc(u)}" ${i === 0 ? "disabled" : ""} title="Move left">◀</button>
+        <button data-act="ptydown" data-url="${esc(u)}" ${i === ordered.length - 1 ? "disabled" : ""} title="Move right">▶</button>
+        <button data-act="ptyhide" data-url="${esc(u)}" title="${m.hidden ? "Show on the bar" : "Hide from the bar"}">${m.hidden ? "Show" : "Hide"}</button>
+      </div>
+    </div>`;
+  }).join("");
+  return `<div class="ptop">
+      <label class="auto"><input type="checkbox" data-act="ptyshow" ${p.show ? "checked" : ""}> Show the party bar to everyone</label>
+      <div class="muted small">Heroes come from <b>Mark as Hero</b>. Pick each hero's player so their card lights up when they talk: each player turns on the 🎙 button on their own card.</div>
+    </div>
+    <div class="plist">${rows || `<div class="empty">No heroes yet. Right-click hero tokens and choose <b>Mark as Hero</b>.</div>`}</div>`;
+}
+
+async function saveParty(fn) {
+  const md = await OBR.room.getMetadata();
+  const p = partyOf(md);
+  const heroes = Array.isArray(md[HEROES_KEY]) ? md[HEROES_KEY] : [];
+  p.order = [...p.order.filter((u) => heroes.includes(u)), ...heroes.filter((u) => !p.order.includes(u))];
+  fn(p);
+  await OBR.room.setMetadata({ [PARTY_KEY]: p });
+}
+
+async function handleParty(act, el) {
+  const u = el.dataset.url;
+  const mem = (p) => (p.members[u] ||= {});
+  if (act === "ptyup" || act === "ptydown") {
+    await saveParty((p) => {
+      const i = p.order.indexOf(u), j = act === "ptyup" ? i - 1 : i + 1;
+      if (i < 0 || j < 0 || j >= p.order.length) return;
+      [p.order[i], p.order[j]] = [p.order[j], p.order[i]];
+    });
+  }
+  if (act === "ptyhide") await saveParty((p) => { mem(p).hidden = !mem(p).hidden; });
+}
+
+async function partyField(el) {
+  const u = el.dataset.url;
+  const v = el.type === "checkbox" ? el.checked : el.value.trim();
+  await saveParty((p) => {
+    if (el.dataset.act === "ptyshow") { p.show = v; return; }
+    const m = (p.members[u] ||= {});
+    if (el.dataset.act === "ptyname") m.name = v;
+    if (el.dataset.act === "ptycls") m.cls = v;
+    if (el.dataset.act === "ptyport") m.portrait = v;
+    if (el.dataset.act === "ptypid") { m.pid = v; m.pname = (players.find((pl) => pl.id === v) || {}).name || ""; }
+  });
+}
+
+async function loadHeroNames() {
+  heroNames = new Map();
+  if (!(await OBR.scene.isReady())) return;
+  const heroes = Array.isArray(roomMd[HEROES_KEY]) ? roomMd[HEROES_KEY] : [];
+  for (const it of await OBR.scene.items.getItems((i) => i.layer === "CHARACTER")) {
+    const url = it.image && it.image.url;
+    if (url && isHero(it, heroes) && !heroNames.has(url)) heroNames.set(url, itemName(it));
+  }
 }
 
 // ================================================================ library
@@ -506,6 +589,7 @@ app.addEventListener("input", (ev) => {
 });
 app.addEventListener("change", async (ev) => {
   const el = ev.target;
+  if (el.dataset.act && el.dataset.act.startsWith("pty")) { partyField(el); return; }
   if (el.dataset.act === "assess") {
     const k = el.value;
     if (!k) return;
@@ -595,6 +679,10 @@ setInterval(checkOpenRequest, 700); // same-window fallback (the storage event o
 
 OBR.onReady(async () => {
   role = await OBR.player.getRole();
+  roomMd = await OBR.room.getMetadata();
+  OBR.room.onMetadataChange(async (md) => { roomMd = md; if (tab === "party") { await loadHeroNames(); render(); } });
+  try { players = await OBR.party.getPlayers(); } catch (_) {}
+  OBR.party.onChange((pl) => { players = pl; if (tab === "party") render(); });
   applyTheme(await OBR.theme.getTheme());
   OBR.theme.onChange(applyTheme);
   try { selection = (await OBR.player.getSelection()) || []; } catch (_) {}

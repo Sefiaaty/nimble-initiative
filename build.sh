@@ -3,7 +3,7 @@
 set -e
 BASE="${1:-https://sefiaaty.github.io/nimble-initiative}"
 rm -rf docs && mkdir docs
-npx esbuild src/background.js src/popover.js --bundle --format=esm --minify --outdir=docs --log-level=warning
+npx esbuild src/background.js src/popover.js src/bar.js --bundle --format=esm --minify --outdir=docs --log-level=warning
 cp public/*.html public/*.css public/*.svg docs/
 sed "s#\"/#\"$BASE/#g" public/manifest.json > docs/manifest.json
 touch docs/.nojekyll
@@ -11,3 +11,4 @@ touch docs/.nojekyll
 V=$(cat docs/*.js docs/*.css | sha1sum | cut -c1-8)
 sed -i "s#src=\"popover.js\"#src=\"popover.js?v=$V\"#; s#href=\"style.css\"#href=\"style.css?v=$V\"#" docs/index.html
 sed -i "s#src=\"background.js\"#src=\"background.js?v=$V\"#" docs/background.html
+sed -i "s#src=\"bar.js\"#src=\"bar.js?v=$V\"#; s#href=\"bar.css\"#href=\"bar.css?v=$V\"#" docs/bar.html

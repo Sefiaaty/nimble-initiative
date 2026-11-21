@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -110,6 +110,41 @@ OBR.onReady(async () => {
   OBR.scene.onMetadataChange(runActive);
   OBR.scene.onReadyChange(async (ready) => { if (ready) { try { dpi = await OBR.scene.grid.getDpi(); } catch (_) {} } runActive(); });
   (async () => { try { if (await OBR.scene.isReady()) dpi = await OBR.scene.grid.getDpi(); } catch (_) {} runActive(); })();
+
+  // ---- party bar along the bottom of the screen, for everyone ----
+  const BAR_ID = `${ID}/bar`;
+  let barKey = "";
+  async function syncBar() {
+    const md = await OBR.room.getMetadata();
+    const n = partyList(md).length;
+    const show = partyOf(md).show && n > 0;
+    const vw = await OBR.viewport.getWidth();
+    const vh = await OBR.viewport.getHeight();
+    const cw = Math.max(70, Math.min(150, Math.floor((vw - 80) / Math.max(n, 1)) - 6));
+    const width = Math.min(vw - 40, n * (cw + 6) + 16);
+    const height = Math.round(cw * 1.37) + 34; // card + name + player plate + room to rise
+    const key = show ? `${vw}x${vh}:${n}` : "off";
+    if (key === barKey) return;
+    barKey = key;
+    if (!show) { await OBR.popover.close(BAR_ID); return; }
+    await OBR.popover.open({
+      id: BAR_ID,
+      url: new URL("bar.html", import.meta.url).href,
+      width, height,
+      anchorReference: "POSITION",
+      anchorPosition: { left: Math.round(vw / 2), top: vh },
+      anchorOrigin: { horizontal: "CENTER", vertical: "BOTTOM" },
+      transformOrigin: { horizontal: "CENTER", vertical: "BOTTOM" },
+      hidePaper: true,
+      disableClickAway: true,
+      marginThreshold: 0,
+    });
+  }
+  let barBusy = Promise.resolve();
+  const runBar = () => { barBusy = barBusy.then(syncBar).catch((err) => console.warn("[nimble bar]", err)); };
+  OBR.room.onMetadataChange(runBar);
+  setInterval(runBar, 2000); // follows window resizes
+  runBar();
 
   // Everything below runs for the GM only, so there is one writer.
   const role = await OBR.player.getRole();

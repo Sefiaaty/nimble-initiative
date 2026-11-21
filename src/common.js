@@ -9,6 +9,20 @@ export const MON_KEY = `${ID}/monster`;   // item metadata: linked stat block
 export const LIB_KEY = `${ID}/library`;   // localStorage (GM browser): saved stat blocks
 export const OPEN_KEY = `${ID}/open`;     // localStorage: ask the popover to open a tab
 export const NEXUS = "https://nimble.nexus";
+export const PARTY_KEY = `${ID}/party`;   // room metadata: party bar settings
+export const TALK_CH = `${ID}/talk`;      // broadcast channel: who is talking
+export const CLASSES = ["Berserker", "Commander", "Hunter", "Mage", "Oathsworn", "Shadowmancer", "Shepherd", "Songweaver", "Stormshifter", "The Cheat", "Zephyr"];
+export function partyOf(md) {
+  const p = (md && md[PARTY_KEY]) || {};
+  return { show: p.show !== false, members: p.members || {}, order: Array.isArray(p.order) ? p.order : [] };
+}
+// Heroes in bar order: saved order first, then any new ones; hidden ones left out.
+export function partyList(md) {
+  const heroes = Array.isArray(md[HEROES_KEY]) ? md[HEROES_KEY] : [];
+  const p = partyOf(md);
+  const ordered = [...p.order.filter((u) => heroes.includes(u)), ...heroes.filter((u) => !p.order.includes(u))];
+  return ordered.filter((u) => !(p.members[u] && p.members[u].hidden));
+}
 
 export const MAX_ACTIONS = 3;
 export const REACTIONS = [

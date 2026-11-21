@@ -111,3 +111,6 @@ body.cutouts .card.brb .cut{filter:grayscale(1) brightness(.3)}
 body.cutouts .card.lowair .cut{filter:brightness(.45) saturate(.5) drop-shadow(0 0 4px rgba(79,195,247,.95))}
 body.cutouts .card.nudge .cut{animation:cutpulse .7s ease-in-out 4}
 body.cutouts .badge{display:none}
+
+/* let the figure run past the bottom of the screen, so the screen edge cuts it naturally */
+body.cutouts .cut{bottom:-16%;max-height:116%}

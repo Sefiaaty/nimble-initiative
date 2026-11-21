@@ -123,7 +123,8 @@ OBR.onReady(async () => {
     const cw = Math.max(70, Math.min(150, Math.floor((vw - 80) / Math.max(n, 1)) - 6));
     const width = Math.min(vw - 40, n * (cw + 6) + 16);
     const height = Math.round(cw * (partyOf(md).style === "cutouts" ? 1.4 : 1.37)) + 120; // card + name + plate, plus room above for speech bubbles, emotes and panels
-    const key = show ? `${vw}x${vh}:${n}` : "off";
+    const off = Math.max(-100, Math.min(200, partyOf(md).offset));
+    const key = show ? `${vw}x${vh}:${n}:${off}:${partyOf(md).style}` : "off";
     if (key === barKey) return;
     barKey = key;
     if (!show) { await OBR.popover.close(BAR_ID); return; }
@@ -132,12 +133,13 @@ OBR.onReady(async () => {
       url: new URL("bar.html", import.meta.url).href,
       width, height,
       anchorReference: "POSITION",
-      anchorPosition: { left: Math.round(vw / 2), top: vh },
+      // push the bar down past Owlbear's edge margin so it sits flush on the bottom of the screen
+      anchorPosition: { left: Math.round(vw / 2), top: vh + off },
       anchorOrigin: { horizontal: "CENTER", vertical: "BOTTOM" },
       transformOrigin: { horizontal: "CENTER", vertical: "BOTTOM" },
       hidePaper: true,
       disableClickAway: true,
-      marginThreshold: 0,
+      marginThreshold: -Math.abs(off),
     });
   }
   let barBusy = Promise.resolve();

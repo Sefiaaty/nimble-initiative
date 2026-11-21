@@ -153,3 +153,5 @@ button.acted.on{color:var(--ready)}
 .recap td:first-child{max-width:90px;overflow:hidden;text-overflow:ellipsis}
 .rbar{display:inline-block;width:46px;height:6px;border-radius:3px;background:color-mix(in srgb,var(--fg) 12%,transparent);vertical-align:middle;overflow:hidden}
 .rbar i{display:block;height:100%;background:#4fc3f7}
+.ptop .auto button{width:22px;height:20px;border-radius:7px;background:color-mix(in srgb,var(--fg) 12%,transparent);font-weight:700}
+.ptop .auto b{min-width:38px;text-align:center}

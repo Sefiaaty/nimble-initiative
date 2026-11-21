@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -120,10 +120,10 @@ OBR.onReady(async () => {
     const show = partyOf(md).show && n > 0;
     const vw = await OBR.viewport.getWidth();
     const vh = await OBR.viewport.getHeight();
-    const cw = Math.max(70, Math.min(150, Math.floor((vw - 80) / Math.max(n, 1)) - 6));
-    const width = Math.min(vw - 40, n * (cw + 6) + 16);
-    const height = Math.round(cw * (partyOf(md).style === "cutouts" ? 1.4 : 1.37)) + 120; // card + name + plate, plus room above for speech bubbles, emotes and panels
-    const key = show ? `${vw}x${vh}:${n}:${partyOf(md).style}` : "off";
+    const L = barLayout(md, vw);
+    const width = Math.min(vw - 20, L.total);
+    const height = Math.round(L.maxW * (partyOf(md).style === "cutouts" ? 1.4 : 1.37)) + 120; // card + name + plate, plus room above for speech bubbles, emotes and panels
+    const key = show ? `${vw}x${vh}:${width}x${height}:${partyOf(md).style}` : "off";
     if (key === barKey) return;
     if (!show) { await OBR.popover.close(BAR_ID); barKey = key; return; }
     await OBR.popover.open({

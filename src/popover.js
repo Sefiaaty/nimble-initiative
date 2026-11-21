@@ -356,6 +356,8 @@ function renderParty() {
           <select data-act="ptypid" data-url="${esc(u)}" title="Which player plays this hero (their card lights up when they talk)"><option value="">Player…</option>${players.map((pl) => `<option value="${esc(pl.id)}" ${m.pid === pl.id ? "selected" : ""}>${esc(pl.name)}</option>`).join("")}${m.pid && !players.some((pl) => pl.id === m.pid) ? `<option value="${esc(m.pid)}" selected>${esc(m.pname || "Offline player")}</option>` : ""}</select>
         </div>
         <input type="text" placeholder="${p.style === "cutouts" ? "Cut-out PNG link (transparent background)" : "Portrait image link (optional)"}" value="${esc(m.portrait || "")}" data-act="ptyport" data-url="${esc(u)}">
+        <div class="psize" title="This hero's size on the bar">Size
+          <button data-act="ptyscale" data-url="${esc(u)}" data-d="-0.1">−</button><b>${Math.round((Number(m.scale) || 1) * 100)}%</b><button data-act="ptyscale" data-url="${esc(u)}" data-d="0.1">+</button></div>
       </div>
       <div class="pbtns">
         <button data-act="ptyup" data-url="${esc(u)}" ${i === 0 ? "disabled" : ""} title="Move left">◀</button>
@@ -370,6 +372,10 @@ function renderParty() {
       <label class="auto">Bar style <select data-act="ptystyle">
         <option value="cards" ${p.style !== "cutouts" ? "selected" : ""}>Portrait cards</option>
         <option value="cutouts" ${p.style === "cutouts" ? "selected" : ""}>Cut-outs (character PNGs, dim until they talk)</option></select></label>
+      <label class="auto" title="How big the heroes are (they shrink to fit if there isn't room)">Size
+        <button data-act="ptysize" data-d="-10">−</button><b>${p.size}px</b><button data-act="ptysize" data-d="10">+</button></label>
+      <label class="auto" title="Space between heroes">Spacing
+        <button data-act="ptygap" data-d="-4">−</button><b>${p.gap}px</b><button data-act="ptygap" data-d="4">+</button></label>
       <label class="auto" title="Pushes the pictures down past the bottom edge so the screen cuts them">Sink below edge
         <button data-act="ptyoff" data-d="-4">−</button><b>${p.offset}px</b><button data-act="ptyoff" data-d="4">+</button></label>
       <div class="muted small">Heroes come from <b>Mark as Hero</b>. Pick each hero's player so their card lights up when they talk: each player turns on the 🎙 button on their own card.</div>
@@ -417,6 +423,9 @@ async function handleParty(act, el) {
     });
   }
   if (act === "ptyhide") await saveParty((p) => { mem(p).hidden = !mem(p).hidden; });
+  if (act === "ptysize") await saveParty((p) => { p.size = Math.max(80, Math.min(400, p.size + Number(el.dataset.d))); });
+  if (act === "ptygap") await saveParty((p) => { p.gap = Math.max(0, Math.min(80, p.gap + Number(el.dataset.d))); });
+  if (act === "ptyscale") await saveParty((p) => { const m = mem(p); m.scale = Math.round(Math.max(0.5, Math.min(2.5, (Number(m.scale) || 1) + Number(el.dataset.d))) * 10) / 10; });
   if (act === "ptyoff") await saveParty((p) => { p.offset = Math.max(0, Math.min(80, p.offset + Number(el.dataset.d))); });
   if (act === "ptyreset") {
     if (!confirmReset) { confirmReset = true; render(); setTimeout(() => { confirmReset = false; render(); }, 4000); return; }

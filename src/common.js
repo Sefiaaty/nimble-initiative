@@ -14,7 +14,23 @@ export const TALK_CH = `${ID}/talk`;      // broadcast channel: who is talking
 export const CLASSES = ["Berserker", "Commander", "Hunter", "Mage", "Oathsworn", "Shadowmancer", "Shepherd", "Songweaver", "Stormshifter", "The Cheat", "Zephyr"];
 export function partyOf(md) {
   const p = (md && md[PARTY_KEY]) || {};
-  return { show: p.show !== false, style: p.style === "cutouts" ? "cutouts" : "cards", offset: Number.isFinite(Number(p.offset)) ? Number(p.offset) : 0, members: p.members || {}, order: Array.isArray(p.order) ? p.order : [] };
+  return { show: p.show !== false, style: p.style === "cutouts" ? "cutouts" : "cards", offset: Number.isFinite(Number(p.offset)) ? Number(p.offset) : 0, size: Number.isFinite(Number(p.size)) ? Number(p.size) : 150, gap: Number.isFinite(Number(p.gap)) ? Number(p.gap) : 12, members: p.members || {}, order: Array.isArray(p.order) ? p.order : [] };
+}
+// Card widths for the bar: overall size, spacing and each hero's own size, shrunk to fit the screen.
+export function barLayout(md, vw) {
+  const p = partyOf(md);
+  const urls = partyList(md);
+  const n = urls.length;
+  const scale = (u) => Math.max(0.5, Math.min(2.5, Number((p.members[u] || {}).scale) || 1));
+  const sum = urls.reduce((a, u) => a + scale(u), 0) || 1;
+  const avail = vw - 60 - p.gap * Math.max(0, n - 1);
+  const base = Math.min(p.size, avail / sum);
+  const widths = {};
+  for (const u of urls) widths[u] = Math.max(40, Math.round(base * scale(u)));
+  const ws = Object.values(widths);
+  const total = ws.reduce((a, b) => a + b, 0) + p.gap * Math.max(0, n - 1) + 16;
+  const maxW = ws.length ? Math.max(...ws) : 0;
+  return { urls, widths, gap: p.gap, total, maxW };
 }
 // Heroes in bar order: saved order first, then any new ones; hidden ones left out.
 export function partyList(md) {

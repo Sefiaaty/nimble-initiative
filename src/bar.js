@@ -2,7 +2,7 @@
 // Players: talking light, raise hand, quick emotes, say (speech bubble), whisper to the GM, BRB, spend Inspiration.
 // GM: soft pings, nudge a player, quiet meter, "ask next", Inspiration, session recap stats.
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, STATE_KEY, TALK_CH, PARTY_KEY, partyOf, partyList, isHero, getHeroImages, itemName } from "./common.js";
+import { ID, STATE_KEY, TALK_CH, PARTY_KEY, partyOf, partyList, barLayout, isHero, getHeroImages, itemName } from "./common.js";
 import { CLASS_ICONS } from "./classIcons.js";
 
 const EV_CH = `${ID}/party-ev`;     // broadcast: player state heartbeats and one-off events
@@ -90,17 +90,15 @@ async function flushStats() {
 }
 
 // ---------- rendering ----------
-function cardWidth(n) {
-  const w = Math.floor((window.innerWidth - 12) / Math.max(n, 1)) - 6;
-  return Math.max(70, Math.min(150, w));
-}
+let viewW = 1600; // Owlbear's viewport width, so the bar sizes cards exactly like the popover was sized
 const live = (pid) => { const s = states.get(pid); return s && Date.now() - s.at < 12000 ? s : null; };
 
 function render() {
   const p = partyOf(roomMd);
-  const urls = partyList(roomMd);
-  const w = cardWidth(urls.length);
+  const L = barLayout(roomMd, viewW);
+  const urls = L.urls;
   document.body.classList.toggle("cutouts", p.style === "cutouts");
+  if (bar.style.gap !== L.gap + "px") bar.style.gap = L.gap + "px";
   // sink the pictures below the bottom edge so the screen edge cuts them
   const sink = Math.max(0, Math.min(80, p.offset)) + "px";
   if (bar.style.bottom !== "-" + sink && sink !== "0px") bar.style.bottom = "-" + sink;
@@ -150,6 +148,7 @@ function render() {
     const meter = gm && pid && s && s.mic ? `<div class="air" title="Share of talking this session"><i style="width:${Math.round((airtime(pid) / maxAir) * 20) * 5}%"></i></div>`
       : gm && pid && !brb ? `<div class="nomic" title="Their talking light is off, so airtime isn't counted">no mic</div>` : "";
     const cls = ["card", isTalking && "talk", turnUrls.has(u) && "turn", quietLong && "isquiet", quietSet.has(pid) && "lowair", brb && "brb", nudgeOn && "nudge", mine && "mine"].filter(Boolean).join(" ");
+    const w = L.widths[u];
     return { u, pid, w, cls, inner: `
       ${say && now - say.at < Math.min(16000, 6000 + say.text.length * 60) ? `<div class="say">${esc(say.text)}</div>` : ""}
       ${askNext === pid ? `<div class="asknext">▼ ask next</div>` : ""}
@@ -430,6 +429,9 @@ async function loadTokens() {
 OBR.onReady(async () => {
   me = { id: await OBR.player.getId(), role: await OBR.player.getRole() };
   roomMd = await OBR.room.getMetadata();
+  const syncView = async () => { const v = await OBR.viewport.getWidth().catch(() => viewW); if (v !== viewW) { viewW = v; render(); } };
+  await syncView();
+  setInterval(syncView, 2000);
   if (roomMd[STATS_KEY] && roomMd[STATS_KEY].p) stats = structuredClone(roomMd[STATS_KEY]);
   await loadTokens();
   render();

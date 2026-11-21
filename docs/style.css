@@ -155,3 +155,6 @@ button.acted.on{color:var(--ready)}
 .rbar i{display:block;height:100%;background:#4fc3f7}
 .ptop .auto button{width:22px;height:20px;border-radius:7px;background:color-mix(in srgb,var(--fg) 12%,transparent);font-weight:700}
 .ptop .auto b{min-width:38px;text-align:center}
+.psize{display:flex;align-items:center;gap:5px;font-size:12px;opacity:.9}
+.psize button{width:22px;height:20px;border-radius:7px;background:color-mix(in srgb,var(--fg) 12%,transparent);font-weight:700}
+.psize b{min-width:38px;text-align:center}

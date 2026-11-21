@@ -89,7 +89,7 @@ body.cutouts .badge{z-index:5}
 body.cutouts .name{position:relative;z-index:4}
 
 /* cut-outs sit right on the bottom edge, no name plates, soft fade at the top of the art */
-body.cutouts #bar{padding-bottom:0;gap:0}
+body.cutouts #bar{padding-bottom:0}
 body.cutouts .name,body.cutouts .player{display:none}
 body.cutouts .frame{height:calc(var(--w)*1.4)}
 body.cutouts .art{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 22%);mask-image:linear-gradient(to bottom,transparent 0,#000 22%)}
@@ -115,3 +115,6 @@ body.cutouts .badge{display:none}
 /* the picture's own bottom edge sits exactly on the bottom of the screen */
 body.cutouts .cut{bottom:0;max-height:100%}
 body.cutouts .frame{margin-bottom:0}
+
+body.cutouts .art{left:0;right:0}
+body.cutouts .cut{max-width:100%}

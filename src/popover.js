@@ -1,7 +1,7 @@
 // Popover UI: Nimble initiative tracker (v2) and the monster library.
 import OBR from "@owlbear-rodeo/sdk";
 import {
-  STATE_KEY, MON_KEY, OPEN_KEY, REACTIONS, GROUP_COLORS, GMG_NAMES,
+  STATE_KEY, MON_KEY, OPEN_KEY, REACTIONS, SKILLS, GROUP_COLORS, GMG_NAMES,
   emptyState, migrateState, updateState, startingPips, freshPips, movesLeft, resetMovement,
   startTurn, finishTurn, nextUp, newRound, actors, toggleReaction, hpOf, isMonsterKind,
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
@@ -120,6 +120,14 @@ function row(e) {
   const pips = e.pips.map((p, i) => `<button class="pip ${p}" data-act="pip" data-id="${e.id}" data-i="${i}" title="${mon ? (p === "ready" ? "Action ready" : "Action used") : PIP_TIP[p]}" ${edit ? "" : "disabled"}></button>`).join("");
   const init = e.kind === "hero" ? `<div class="init">${INIT.map((o) =>
     `<button class="chip ${e.init === o.n ? "on" : ""}" data-act="init" data-id="${e.id}" data-n="${o.n}" title="${o.tip}" ${edit ? "" : "disabled"}>${o.label}</button>`).join("")}</div>` : "";
+  const used = e.assessed || [];
+  const assess = e.kind === "hero" ? `<div class="assess">
+      <select data-act="assess" data-id="${e.id}" title="Assess (1 action): each skill only once per encounter" ${e.pips.includes("ready") && used.length < SKILLS.length ? "" : "disabled"}>
+        <option value="">Assess…</option>
+        ${SKILLS.map((k) => `<option value="${k}" ${used.includes(k) ? "disabled" : ""}>${k}${used.includes(k) ? " (used)" : ""}</option>`).join("")}
+      </select>
+      ${used.map((k) => `<button class="used" data-act="unassess" data-id="${e.id}" data-k="${k}" title="Used this encounter (click to undo)">${k} ✕</button>`).join("")}
+    </div>` : "";
   const reacts = e.kind === "hero" ? `<div class="reacts" title="Reactions: each costs 1 action from your next turn, once per round">${REACTIONS.map((r) =>
     `<button class="rx ${e.react[r.k] ? "on" : ""}" data-act="react" data-id="${e.id}" data-k="${r.k}" title="${r.name}" ${edit && (e.react[r.k] || e.pips.includes("ready")) ? "" : "disabled"}>${r.label}</button>`).join("")}</div>` : "";
   const count = e.kind === "minion" ? `<span class="count">×${e.items.length}</span>` : "";
@@ -157,6 +165,7 @@ function row(e) {
       ${init}
       ${hpBlock(e)}
       <div class="line"><div class="pips">${pips}${nactCtl}</div>${move}</div>
+      ${assess}
       ${reacts}
       ${openStat.has(e.id) ? `<div class="stat">${statHtml(statCache.get(e.items[0]))}</div>` : ""}
       ${turnBtn}
@@ -232,12 +241,12 @@ async function handle(act, el) {
       case "start":
         s.started = true; s.round = 1; s.done = []; s.legQueue = []; s.active = null; s.phase = "pick";
         rescaleLegendary(s);
-        for (const x of s.entries) { x.pips = startingPips(x); x.react = {}; resetMovement(x); }
+        for (const x of s.entries) { x.pips = startingPips(x); x.react = {}; x.assessed = []; resetMovement(x); }
         { const n = nextUp(s); if (n) startTurn(s, n.id); }
         break;
       case "stop":
         s.started = false; s.round = 0; s.done = []; s.legQueue = []; s.active = null; s.phase = "pick";
-        for (const x of s.entries) { x.pips = isMonsterKind(x.kind) ? freshPips(x.nact) : freshPips(); x.react = {}; resetMovement(x); x.init = null; }
+        for (const x of s.entries) { x.pips = isMonsterKind(x.kind) ? freshPips(x.nact) : freshPips(); x.react = {}; x.assessed = []; resetMovement(x); x.init = null; }
         break;
       case "clear":
         return Object.assign(s, emptyState());
@@ -276,6 +285,15 @@ async function handle(act, el) {
         const p = e.pips[i];
         if (p === "reaction") return false; // undo it from the reaction marker instead
         e.pips[i] = p === "ready" ? "spent" : "ready";
+        break;
+      }
+      case "unassess": {
+        if (!e) return false;
+        const k = el.dataset.k;
+        if (!e.assessed.includes(k)) return false;
+        e.assessed = e.assessed.filter((x) => x !== k);
+        const i = e.pips.lastIndexOf("spent");
+        if (i >= 0) e.pips[i] = "ready"; // give the action back
         break;
       }
       case "react":
@@ -488,6 +506,19 @@ app.addEventListener("input", (ev) => {
 });
 app.addEventListener("change", async (ev) => {
   const el = ev.target;
+  if (el.dataset.act === "assess") {
+    const k = el.value;
+    if (!k) return;
+    updateState((s) => {
+      const e = find(s, el.dataset.id);
+      if (!e || e.assessed.includes(k)) return false;
+      const i = e.pips.indexOf("ready");
+      if (i < 0) return false;
+      e.pips[i] = "spent";
+      e.assessed.push(k);
+    });
+    return;
+  }
   if (el.dataset.act === "auto") { updateState((s) => { s.autoMove = el.checked; }); return; }
   if (el.dataset.act === "libimport") {
     const f = el.files && el.files[0];

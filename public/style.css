@@ -126,3 +126,9 @@ button.acted.on{color:var(--ready)}
 .row.sel{background:color-mix(in srgb,#ffcf4a 14%,transparent);box-shadow:inset 3px 0 0 #ffcf4a}
 .row.sel.active{box-shadow:0 0 0 1px var(--accent) inset,inset 4px 0 0 #ffcf4a}
 .row.active img{box-shadow:0 0 0 2px #ffcf4a}
+.assess{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.assess select{font:inherit;font-size:13px;color:var(--fg);background:color-mix(in srgb,var(--fg) 10%,transparent);border:1px solid color-mix(in srgb,var(--fg) 20%,transparent);border-radius:8px;padding:2px 6px}
+.assess select option{color:#000}
+.assess select option:disabled{color:#999}
+.assess .used{font-size:12px;padding:1px 7px;border-radius:9px;background:color-mix(in srgb,var(--fg) 8%,transparent);color:var(--fg2);text-decoration:line-through}
+.assess .used:hover{text-decoration:none;color:var(--fg)}

@@ -17,6 +17,7 @@ export const REACTIONS = [
   { k: "o", label: "Opp", name: "Opportunity Attack" },
   { k: "h", label: "Help", name: "Help" },
 ];
+export const SKILLS = ["Arcana", "Examination", "Finesse", "Influence", "Insight", "Lore", "Might", "Naturecraft", "Perception", "Stealth"];
 export const GROUP_COLORS = ["#ff5d5d", "#4fc3f7", "#ffd54f", "#81c784", "#ba68c8", "#ff9f43"];
 
 export function emptyState() {
@@ -127,6 +128,7 @@ export function migrateEntry(e) {
   if (!e.moved || typeof e.moved !== "object") e.moved = {};
   delete e.moveLeft;
   if (!e.react) e.react = {};
+  if (!Array.isArray(e.assessed)) e.assessed = [];
   if (!e.hp) e.hp = {};
   if (!e.temp) e.temp = {};
   if (e.nact === undefined) e.nact = 1;

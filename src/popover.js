@@ -22,6 +22,49 @@ let libQuery = "", libType = "all", libOpen = null, libMsg = "", libBusy = false
 let linkTargets = null;           // token ids chosen from the map's right-click menu
 let selection = [];
 
+// ---- rolling monster dice through Dice+ (falls back to a local roll if Dice+ isn't there)
+const ROLL_SRC = "com.shade.nimble-initiative";
+const ROLL_PREF = `${ROLL_SRC}/rollTarget`;
+let rollTarget = "everyone";
+try { if (localStorage.getItem(ROLL_PREF) === "self") rollTarget = "self"; } catch (_) {}
+let diceReady = null; // null unknown, true/false after a check
+function checkDicePlus() {
+  return new Promise((resolve) => {
+    const requestId = Math.random().toString(36).slice(2);
+    let done = false;
+    const off = OBR.broadcast.onMessage("dice-plus/isReady", (ev) => {
+      const d = ev.data || {};
+      if (d.requestId === requestId && d.ready) { done = true; off(); resolve(true); }
+    });
+    OBR.broadcast.sendMessage("dice-plus/isReady", { requestId, timestamp: Date.now() }, { destination: "ALL" }).catch(() => {});
+    setTimeout(() => { if (!done) { off(); resolve(false); } }, 1000);
+  });
+}
+function localRoll(n) {
+  const m = n.replace(/\s+/g, "").match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+  if (!m) return null;
+  const cnt = Number(m[1] || 1), sides = Number(m[2]), mod = Number(m[3] || 0);
+  const dice = Array.from({ length: cnt }, () => 1 + Math.floor(Math.random() * sides));
+  return { dice, total: dice.reduce((a, b) => a + b, 0) + mod };
+}
+async function rollDice(notation, label) {
+  if (diceReady !== true) diceReady = await checkDicePlus();
+  if (diceReady) {
+    await OBR.broadcast.sendMessage("dice-plus/roll-request", {
+      rollId: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      playerId: await OBR.player.getId(),
+      playerName: label ? `${await OBR.player.getName()} (${label})` : await OBR.player.getName(),
+      rollTarget, diceNotation: notation.replace(/\s+/g, ""), showResults: true, timestamp: Date.now(), source: ROLL_SRC,
+    }, { destination: "ALL" });
+    return;
+  }
+  const r = localRoll(notation);
+  if (r) OBR.notification.show(`${label ? label + ": " : ""}${notation} = ${r.total} (${r.dice.join(", ")})`);
+}
+// dice in a stat block line become buttons
+const diceify = (html, label) => html.replace(/\b(\d*d\d+(?:\s*[+\u2013-]\s*\d+)?)\b/g,
+  (m) => `<button class="roll" data-act="roll" data-n="${m.replace(/\u2013/g, "-")}" data-what="${label}" title="Roll ${m} in Dice+">🎲 ${m}</button>`);
+
 const INIT = [
   { n: 1, label: "Hesitant", tip: "Initiative 1-9: starts with 1 action" },
   { n: 2, label: "Ready", tip: "Initiative 10-19: starts with 2 actions" },
@@ -178,7 +221,7 @@ function statHtml(m) {
   if (!m) return `<div class="muted">Loading…</div>`;
   const moves = (m.moves || []).map((x) => `${x.mode ? cap(x.mode) + " " : ""}${x.speed}`).join(", ") || m.speed;
   const saves = m.saves ? Object.entries(m.saves).map(([k, v]) => `${k.toUpperCase()}${v > 0 ? "+".repeat(v) : "–".repeat(-v)}`).join(" ") : "";
-  const list = (arr) => arr.map((x) => `<p><b>${esc(clean(x.name))}${x.count > 1 ? ` (${x.count}×)` : ""}.</b> ${esc(clean(x.desc))}</p>`).join("");
+  const list = (arr) => arr.map((x) => `<p><b>${esc(clean(x.name))}${x.count > 1 ? ` (${x.count}×)` : ""}.</b> ${diceify(esc(clean(x.desc)), esc(`${m.name || "Monster"}: ${clean(x.name)}`))}</p>`).join("");
   const members = (m.members || []).map((mm) => `<div class="member"><div class="mh">${esc(mm.name)}${mm.hpPerHero ? ` · ${mm.hpPerHero}/hero HP` : mm.hp ? ` · ${mm.hp} HP` : ""}${mm.armor && mm.armor !== "none" ? ` · ${cap(mm.armor)} armor` : ""}</div>${list(mm.abilities)}${list(mm.actions)}</div>`).join("");
   return `
     <div class="sh">Lvl ${esc(m.level || "–")} ${esc(cap(m.size))} ${esc(m.kind)} · ${m.hpPerHero ? `${m.hpPerHero}/hero` : m.hp} HP · ${cap(m.armor === "none" ? "no" : m.armor)} armor · Speed ${esc(moves)}${saves ? ` · Saves ${esc(saves)}` : ""}</div>
@@ -189,7 +232,7 @@ function statHtml(m) {
     ${m.bloodied ? `<p class="bl"><b>Bloodied:</b> ${esc(clean(m.bloodied))}</p>` : ""}
     ${m.lastStand ? `<p class="ls"><b>Last Stand:</b> ${esc(clean(m.lastStand))}</p>` : ""}
     ${m.type === "minion" ? `<p class="rules"><b>Minion rules:</b> any damage kills one. Attacks use a single die, can't crit, miss on a 1 and ignore advantage and disadvantage. Minions attacking the same hero add their damage into one attack (Defend or Interpose once against all of it).</p>` : ""}
-    <div class="src"><a href="https://nimble.nexus/monsters/${esc(m.nid)}" target="_blank" rel="noopener">nimble.nexus</a></div>`;
+    <div class="src"><button class="rollto" data-act="rollto" title="Who sees the rolls you make from this stat block">🎲 Rolls: ${rollTarget === "self" ? "only me" : "everyone"}</button> · <a href="https://nimble.nexus/monsters/${esc(m.nid)}" target="_blank" rel="noopener">nimble.nexus</a></div>`;
 }
 
 async function loadStat(e) {
@@ -203,6 +246,8 @@ async function loadStat(e) {
 // ---- actions ----
 async function handle(act, el) {
   const id = el.dataset.id;
+  if (act === "roll") { await rollDice(el.dataset.n, el.dataset.what); return; }
+  if (act === "rollto") { rollTarget = rollTarget === "self" ? "everyone" : "self"; try { localStorage.setItem(ROLL_PREF, rollTarget); } catch (_) {} render(); return; }
   if (act === "tab") { tab = el.dataset.t; if (tab === "party") await loadHeroNames(); render(); return; }
   if (act === "focus") {
     const e = find(state, id);

@@ -158,3 +158,6 @@ button.acted.on{color:var(--ready)}
 .psize{display:flex;align-items:center;gap:5px;font-size:12px;opacity:.9}
 .psize button{width:22px;height:20px;border-radius:7px;background:color-mix(in srgb,var(--fg) 12%,transparent);font-weight:700}
 .psize b{min-width:38px;text-align:center}
+.stat .roll{font:inherit;font-weight:700;padding:0 5px;margin:0 1px;border-radius:6px;border:1px solid color-mix(in srgb,var(--fg) 25%,transparent);background:color-mix(in srgb,#bb99ff 22%,transparent);color:inherit;cursor:pointer;white-space:nowrap}
+.stat .roll:hover{background:color-mix(in srgb,#bb99ff 45%,transparent)}
+.stat .rollto{font:inherit;font-size:12px;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,var(--fg) 10%,transparent);cursor:pointer}

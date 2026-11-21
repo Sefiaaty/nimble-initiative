@@ -5,7 +5,8 @@
 html,body{margin:0;background:#1e2231;color:#efe6d2;font:14px system-ui,sans-serif}
 main{padding:14px;display:flex;flex-direction:column;gap:10px}
 h1{font-size:15px;margin:0}
-.meter{height:12px;border-radius:6px;background:#2d3143;overflow:hidden}
+.meter{position:relative;height:14px;border-radius:7px;background:#2d3143;overflow:hidden}
+.meter b{position:absolute;top:0;bottom:0;width:3px;margin-left:-1px;background:#fff;box-shadow:0 0 0 1px #000a}
 .meter i{display:block;height:100%;width:0;background:#4caf6e;transition:width .05s}
 .meter.talk i{background:#ffcf4a}
 button{font:inherit;padding:6px 12px;border:0;border-radius:14px;background:#bb99ff;color:#000;font-weight:600;cursor:pointer;align-self:flex-start}
@@ -14,8 +15,11 @@ button{font:inherit;padding:6px 12px;border:0;border-radius:14px;background:#bb9
 </style></head>
 <body><main>
 <h1>🎙 Nimble talking light</h1>
-<div class="meter" id="m"><i></i></div>
+<div class="meter" id="m"><i></i><b id="mark"></b></div>
+<label class="s" style="display:flex;gap:8px;align-items:center">Sensitivity
+  <input type="range" id="thr" min="0" max="100" step="1" style="flex:1"></label>
+<div class="s">Your card lights up when the bar passes the white line. Drag left if it doesn't light up, right if background noise sets it off.</div>
 <div class="s" id="st">Starting…</div>
 <button id="go" hidden>Allow microphone</button>
 <div class="s">Keep this little window open (you can put it behind Owlbear). Close it to turn the light off.</div>
-</main><script type="module" src="mic.js?v=d62a19d0"></script></body></html>
+</main><script type="module" src="mic.js?v=e214b633"></script></body></html>

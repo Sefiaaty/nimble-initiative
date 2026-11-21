@@ -113,7 +113,7 @@ let helper = null;
 async function openHelper() {
   const url = new URL("mic.html", import.meta.url).href;
   let w = null;
-  try { w = window.open("", "nimble-mic", "width=380,height=230"); } catch (_) {}
+  try { w = window.open("", "nimble-mic", "width=400,height=340"); } catch (_) {}
   if (!w) return false; // popup blocked
   let fresh = false;
   try { fresh = w.location.href === "about:blank"; } catch (_) { fresh = false; }

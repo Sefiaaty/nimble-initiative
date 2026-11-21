@@ -3,6 +3,20 @@
 const st = document.getElementById("st");
 const meter = document.getElementById("m");
 const go = document.getElementById("go");
+const slider = document.getElementById("thr");
+const mark = document.getElementById("mark");
+// Levels on a decibel scale, like Discord's input sensitivity: 0% = -60 dB (silence), 100% = 0 dB (loudest).
+const THR_KEY = "nimble-mic-threshold";
+const pct = (rms) => Math.max(0, Math.min(100, ((20 * Math.log10(Math.max(rms, 1e-6)) + 60) / 60) * 100));
+let thrPct = 40;
+try { const v = Number(localStorage.getItem(THR_KEY)); if (v > 0 && v <= 100) thrPct = v; } catch (_) {}
+slider.value = String(thrPct);
+mark.style.left = thrPct + "%";
+slider.addEventListener("input", () => {
+  thrPct = Number(slider.value);
+  mark.style.left = thrPct + "%";
+  try { localStorage.setItem(THR_KEY, String(thrPct)); } catch (_) {}
+});
 let target = window.opener;
 let on = false, sentAt = 0;
 
@@ -34,7 +48,7 @@ async function start() {
   const an = ctx.createAnalyser(); an.fftSize = 1024;
   ctx.createMediaStreamSource(stream).connect(an);
   const buf = new Float32Array(an.fftSize);
-  let floor = 0.01, above = 0, below = 0;
+  let above = 0, below = 0;
   status();
   setInterval(() => {
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
@@ -42,14 +56,13 @@ async function start() {
     let sum = 0;
     for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
     const rms = Math.sqrt(sum / buf.length);
-    if (!on) floor = floor * 0.98 + rms * 0.02;
-    const thr = Math.max(0.012, floor * 2.6);
-    if (rms > thr) { above++; below = 0; } else { below++; above = 0; }
+    const level = pct(rms);
+    if (level > thrPct) { above++; below = 0; } else { below++; above = 0; }
     const now = Date.now();
     if (!on && above >= 3) post(true);
     else if (on && below >= 14) post(false);
     else if (on && now - sentAt > 1500) post(true);
-    meter.firstElementChild.style.width = Math.min(100, (rms / 0.15) * 100) + "%";
+    meter.firstElementChild.style.width = level + "%";
     meter.classList.toggle("talk", on);
   }, 50);
   setInterval(status, 2000);

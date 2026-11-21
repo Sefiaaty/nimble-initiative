@@ -112,5 +112,6 @@ body.cutouts .card.lowair .cut{filter:brightness(.45) saturate(.5) drop-shadow(0
 body.cutouts .card.nudge .cut{animation:cutpulse .7s ease-in-out 4}
 body.cutouts .badge{display:none}
 
-/* let the figure run past the bottom of the screen, so the screen edge cuts it naturally */
-body.cutouts .cut{bottom:-16%;max-height:116%}
+/* the picture's own bottom edge sits exactly on the bottom of the screen */
+body.cutouts .cut{bottom:0;max-height:100%}
+body.cutouts .frame{margin-bottom:0}

@@ -6,7 +6,7 @@ import {
   startTurn, finishTurn, nextUp, newRound, actors, toggleReaction, hpOf, isMonsterKind,
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
   clean, tempOf, damage, giveTemp, jumpTo,
-  PARTY_KEY, HEROES_KEY, CLASSES, partyOf, partyList, isHero, itemName,
+  PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, partyOf, partyList, isHero, itemName,
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -336,6 +336,7 @@ async function handle(act, el) {
 let roomMd = {};
 let players = [];
 let heroNames = new Map(); // image url -> token name in this scene
+let confirmDel = null;      // image url waiting for a second click on Remove
 
 function renderParty() {
   const p = partyOf(roomMd);
@@ -358,6 +359,7 @@ function renderParty() {
         <button data-act="ptyup" data-url="${esc(u)}" ${i === 0 ? "disabled" : ""} title="Move left">◀</button>
         <button data-act="ptydown" data-url="${esc(u)}" ${i === ordered.length - 1 ? "disabled" : ""} title="Move right">▶</button>
         <button data-act="ptyhide" data-url="${esc(u)}" title="${m.hidden ? "Show on the bar" : "Hide from the bar"}">${m.hidden ? "Show" : "Hide"}</button>
+        <button class="pdel ${confirmDel === u ? "sure" : ""}" data-act="ptydel" data-url="${esc(u)}" title="Remove from the party and unmark as hero">${confirmDel === u ? "Sure?" : "Remove"}</button>
       </div>
     </div>`;
   }).join("");
@@ -388,6 +390,27 @@ async function handleParty(act, el) {
     });
   }
   if (act === "ptyhide") await saveParty((p) => { mem(p).hidden = !mem(p).hidden; });
+  if (act === "ptydel") {
+    if (confirmDel !== u) { confirmDel = u; render(); setTimeout(() => { if (confirmDel === u) { confirmDel = null; render(); } }, 4000); return; }
+    confirmDel = null;
+    // forget the hero: drop the image from the room's hero list and its bar settings, and unmark tokens here
+    const md = await OBR.room.getMetadata();
+    const heroes = (Array.isArray(md[HEROES_KEY]) ? md[HEROES_KEY] : []).filter((x) => x !== u);
+    const p = partyOf(md);
+    delete p.members[u];
+    p.order = p.order.filter((x) => x !== u);
+    await OBR.room.setMetadata({ [HEROES_KEY]: heroes, [PARTY_KEY]: p });
+    if (await OBR.scene.isReady()) {
+      const mine = (i) => i.image && i.image.url === u && i.metadata[HERO_FLAG] === true;
+      const toks = (await OBR.scene.items.getItems(mine)).filter(mine);
+      if (toks.length) await OBR.scene.items.updateItems(toks.map((t) => t.id), (ds) => { for (const d of ds) delete d.metadata[HERO_FLAG]; });
+    }
+    await updateState((s) => {
+      let n = 0;
+      for (const e of s.entries) if (e.kind === "hero" && e.img === u) { e.kind = "monster"; n++; }
+      return n ? s : false;
+    });
+  }
 }
 
 async function partyField(el) {

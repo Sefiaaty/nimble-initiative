@@ -143,3 +143,4 @@ button.acted.on{color:var(--ready)}
 .pf select option{color:#000}
 .pbtns{display:flex;flex-direction:column;gap:3px}
 .pbtns button{font-size:12px;padding:2px 7px;border-radius:7px;background:color-mix(in srgb,var(--fg) 10%,transparent)}
+.pbtns .pdel{color:#ff8a80}.pbtns .pdel.sure{background:#b3261e;color:#fff}

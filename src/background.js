@@ -173,27 +173,29 @@ OBR.onReady(async () => {
       } else await OBR.popover.close(PILL_ID);
       pillOpen = wantPill;
     }
-    const key = sc.on && !(gm && peek) ? `${vw}x${vh}` : "off";
+    const key = sc.on && !(gm && peek) ? "on" : "off";
     if (key === sceneKey) return;
     if (key === "off") {
       if (closeTimer) return;
       // give the page time to fade out before it goes
-      closeTimer = setTimeout(async () => { closeTimer = null; await OBR.popover.close(SCENE_ID).catch(() => {}); sceneKey = "off"; }, sceneKey === "" || peek ? 0 : 900);
+      closeTimer = setTimeout(async () => { closeTimer = null; await OBR.modal.close(SCENE_ID).catch(() => {}); sceneKey = "off"; }, sceneKey === "" || peek ? 0 : 900);
       return;
     }
     if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
-    await OBR.popover.open({
-      id: SCENE_ID, url: new URL("scene.html?mode=full", import.meta.url).href, width: vw, height: vh,
-      anchorReference: "POSITION", anchorPosition: { left: 0, top: 0 },
-      anchorOrigin: { horizontal: "LEFT", vertical: "TOP" }, transformOrigin: { horizontal: "LEFT", vertical: "TOP" },
-      hidePaper: true, disableClickAway: true, marginThreshold: 0,
+    // a full-screen modal covers the whole window (popovers stop 16px short of each edge)
+    await OBR.modal.open({
+      id: SCENE_ID, url: new URL("scene.html?mode=full", import.meta.url).href,
+      fullScreen: true, hideBackdrop: true, hidePaper: true,
     });
     sceneKey = key;
     barRaise = true; runBar(); // keep the party bar on top of the backdrop
   }
   let sceneBusy = Promise.resolve();
   const runScene = () => { sceneBusy = sceneBusy.then(syncScene).catch((err) => console.warn("[nimble scene]", err)); };
-  bc.onmessage = (e) => { if (e.data && "peek" in e.data) { peek = !!e.data.peek; runScene(); } };
+  bc.onmessage = (e) => {
+    if (e.data && "peek" in e.data) { peek = !!e.data.peek; runScene(); }
+    if (e.data && e.data.sceneClosed && sceneKey === "on" && !closeTimer) { sceneKey = ""; runScene(); }
+  };
   OBR.room.onMetadataChange(runScene);
   setInterval(runScene, 2000);
   runScene();

@@ -80,6 +80,8 @@ OBR.onReady(async () => {
   document.body.classList.add(mode === "pill" ? "pill" : "full");
   const md = await OBR.room.getMetadata();
   if (mode === "pill") { renderPill(md); OBR.room.onMetadataChange(renderPill); return; }
+  // if the backdrop gets closed some other way (Escape), the background reopens it while the scene is on
+  window.addEventListener("pagehide", () => bc.postMessage({ sceneClosed: true }));
   renderGm();
   renderFull(md);
   OBR.room.onMetadataChange(renderFull);

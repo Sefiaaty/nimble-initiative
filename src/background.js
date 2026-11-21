@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -62,6 +62,55 @@ OBR.onReady(async () => {
     },
   });
 
+  // ---- token geometry ----
+  let dpi = 150;
+  const center = (it) => {
+    if (!it.image || !it.grid) return { x: it.position.x, y: it.position.y };
+    const k = (dpi / (it.grid.dpi || dpi));
+    const ox = (it.image.width / 2 - it.grid.offset.x) * k * (it.scale?.x || 1);
+    const oy = (it.image.height / 2 - it.grid.offset.y) * k * (it.scale?.y || 1);
+    return { x: it.position.x + ox, y: it.position.y + oy };
+  };
+  const radius = (it) => {
+    if (!it.image || !it.grid) return dpi / 2;
+    return (it.image.width * (dpi / (it.grid.dpi || dpi)) * Math.abs(it.scale?.x || 1)) / 2;
+  };
+  const circle = (r, n = 40) => Array.from({ length: n + 1 }, (_, i) => ({ x: Math.cos((i / n) * 2 * Math.PI) * r, y: Math.sin((i / n) * 2 * Math.PI) * r }));
+
+
+  // ---- whose turn it is: a gold ring under the acting token(s), drawn for everyone (local items) ----
+  const ACT = `${ID}-turn-`;
+  let actBusy = Promise.resolve();
+  async function drawActive() {
+    if (!(await OBR.scene.isReady())) return;
+    const md = await OBR.scene.getMetadata();
+    const s = md[STATE_KEY];
+    const e = s && s.started && Array.isArray(s.entries) ? s.entries.find((x) => x.id === s.active) : null;
+    const ids = e ? e.items : [];
+    const want = new Set(ids.flatMap((id) => [`${ACT}glow-${id}`, `${ACT}ring-${id}`]));
+    const have = await OBR.scene.local.getItems((i) => i.id.startsWith(ACT));
+    const del = have.filter((i) => !want.has(i.id)).map((i) => i.id);
+    if (del.length) await OBR.scene.local.deleteItems(del);
+    const haveIds = new Set(have.map((i) => i.id));
+    const missing = ids.filter((id) => !haveIds.has(`${ACT}ring-${id}`));
+    if (!missing.length) return;
+    const toks = await OBR.scene.items.getItems(missing);
+    const add = [];
+    for (const t of toks) {
+      const r = radius(t);
+      const base = (id, rr, w, op) => buildCurve().id(id).points(circle(rr, 56)).position(center(t)).strokeColor("#ffcf4a")
+        .strokeOpacity(op).strokeWidth(w).fillOpacity(0).tension(0).closed(true).layer("DRAWING").locked(true)
+        .disableHit(true).name("Current turn").attachedTo(t.id).disableAttachmentBehavior(["COPY"]).build();
+      add.push(base(`${ACT}glow-${t.id}`, r * 1.13, Math.max(10, r * 0.26), 0.3));
+      add.push(base(`${ACT}ring-${t.id}`, r * 1.06, Math.max(5, r * 0.09), 1));
+    }
+    if (add.length) await OBR.scene.local.addItems(add);
+  }
+  const runActive = () => { actBusy = actBusy.then(drawActive).catch((err) => console.warn("[nimble]", err)); };
+  OBR.scene.onMetadataChange(runActive);
+  OBR.scene.onReadyChange(async (ready) => { if (ready) { try { dpi = await OBR.scene.grid.getDpi(); } catch (_) {} } runActive(); });
+  (async () => { try { if (await OBR.scene.isReady()) dpi = await OBR.scene.grid.getDpi(); } catch (_) {} runActive(); })();
+
   // Everything below runs for the GM only, so there is one writer.
   const role = await OBR.player.getRole();
   if (role !== "GM") return;
@@ -117,20 +166,6 @@ OBR.onReady(async () => {
   };
 
   // ---- GM-only rings and link lines for minion groups (local items: only this browser sees them) ----
-  let dpi = 150;
-  const center = (it) => {
-    if (!it.image || !it.grid) return { x: it.position.x, y: it.position.y };
-    const k = (dpi / (it.grid.dpi || dpi));
-    const ox = (it.image.width / 2 - it.grid.offset.x) * k * (it.scale?.x || 1);
-    const oy = (it.image.height / 2 - it.grid.offset.y) * k * (it.scale?.y || 1);
-    return { x: it.position.x + ox, y: it.position.y + oy };
-  };
-  const radius = (it) => {
-    if (!it.image || !it.grid) return dpi / 2;
-    return (it.image.width * (dpi / (it.grid.dpi || dpi)) * Math.abs(it.scale?.x || 1)) / 2;
-  };
-  const circle = (r, n = 40) => Array.from({ length: n + 1 }, (_, i) => ({ x: Math.cos((i / n) * 2 * Math.PI) * r, y: Math.sin((i / n) * 2 * Math.PI) * r }));
-
   async function drawGroups(s, byId) {
     const want = new Map();
     for (const e of s.entries) {

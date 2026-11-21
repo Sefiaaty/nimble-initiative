@@ -143,7 +143,7 @@ function row(e) {
     : canStart ? `<button class="taketurn ${done ? "mon" : ""}" data-act="take" data-id="${e.id}" title="${s.active ? "Ends the current turn, then this one goes" : "Start this turn now"}">${queued ? "⏳ Up next" : `▶ ${done ? "Go again" : e.kind === "hero" ? "Take turn" : "Act now"}`}</button>` : "";
   const nactCtl = mon && gm && e.kind !== "legendary" ? `<span class="nact"><button data-act="nact" data-d="-1" data-id="${e.id}" title="Fewer actions">−</button><button data-act="nact" data-d="1" data-id="${e.id}" title="More actions">+</button></span>` : "";
   return `
-  <div class="row ${active ? "active" : ""} ${done ? "done" : ""} ${e.kind}" data-id="${e.id}" ${gm ? 'draggable="true"' : ""}>
+  <div class="row ${active ? "active" : ""} ${done ? "done" : ""} ${e.items.some((i) => selection.includes(i)) ? "sel" : ""} ${e.kind}" data-id="${e.id}" ${gm ? 'draggable="true"' : ""}>
     ${gm ? `<div class="grip" title="Drag to reorder">⋮⋮</div>` : ""}
     ${e.img ? `<img src="${esc(e.img)}" alt="" onerror="this.style.visibility='hidden'">` : `<div class="noimg"></div>`}
     <div class="body">
@@ -571,7 +571,13 @@ OBR.onReady(async () => {
     const sel = p.selection || [];
     const selChanged = sel.join() !== selection.join();
     selection = sel;
-    if (p.role !== role) { role = p.role; render(); } else if (selChanged && tab === "lib") render();
+    if (p.role !== role) { role = p.role; render(); }
+    else if (selChanged) {
+      render();
+      // bring the selected token's row into view
+      const r = tab === "init" && app.querySelector(".row.sel");
+      if (r) r.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
   });
 
   const load = async () => {

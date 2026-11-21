@@ -123,3 +123,6 @@ button:disabled{cursor:default;opacity:.55}
 button.acted{color:var(--fg2);font-size:14px;line-height:1;padding:0 3px}
 button.acted.on{color:var(--ready)}
 .stat .rules{color:var(--fg2);font-size:13.5px}
+.row.sel{background:color-mix(in srgb,#ffcf4a 14%,transparent);box-shadow:inset 3px 0 0 #ffcf4a}
+.row.sel.active{box-shadow:0 0 0 1px var(--accent) inset,inset 4px 0 0 #ffcf4a}
+.row.active img{box-shadow:0 0 0 2px #ffcf4a}

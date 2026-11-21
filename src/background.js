@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -114,6 +114,7 @@ OBR.onReady(async () => {
   // ---- party bar along the bottom of the screen, for everyone ----
   const BAR_ID = `${ID}/bar`;
   let barKey = "";
+  let barRaise = false; // reopen the bar so it sits above a scene backdrop
   async function syncBar() {
     const md = await OBR.room.getMetadata();
     const n = partyList(md).length;
@@ -124,8 +125,9 @@ OBR.onReady(async () => {
     const width = Math.min(vw - 20, L.total);
     const height = Math.round(L.maxW * (partyOf(md).style === "cutouts" ? 1.4 : 1.37)) + 120; // card + name + plate, plus room above for speech bubbles, emotes and panels
     const key = show ? `${vw}x${vh}:${width}x${height}:${partyOf(md).style}` : "off";
-    if (key === barKey) return;
-    if (!show) { await OBR.popover.close(BAR_ID); barKey = key; return; }
+    if (key === barKey && !barRaise) return;
+    if (!show) { await OBR.popover.close(BAR_ID); barKey = key; barRaise = false; return; }
+    if (barRaise) { barRaise = false; await OBR.popover.close(BAR_ID); }
     await OBR.popover.open({
       id: BAR_ID,
       url: new URL("bar.html", import.meta.url).href,
@@ -145,6 +147,56 @@ OBR.onReady(async () => {
   OBR.room.onMetadataChange(runBar);
   setInterval(runBar, 2000); // follows window resizes
   runBar();
+
+  // ---- scene backdrop over the whole screen, for everyone (GM can peek behind it) ----
+  const SCENE_ID = `${ID}/scene`, PILL_ID = `${ID}/scenepill`;
+  const myRole = await OBR.player.getRole();
+  let peek = false;
+  try { peek = myRole === "GM" && localStorage.getItem(PEEK_KEY) === "1"; } catch (_) {}
+  let sceneKey = "", pillOpen = false, closeTimer = null;
+  const bc = new BroadcastChannel(SCENE_CH);
+  async function syncScene() {
+    const md = await OBR.room.getMetadata();
+    const sc = sceneOf(md);
+    const gm = (await OBR.player.getRole()) === "GM";
+    const vw = await OBR.viewport.getWidth();
+    const vh = await OBR.viewport.getHeight();
+    const wantPill = sc.on && gm && peek;
+    if (wantPill !== pillOpen) {
+      if (wantPill) {
+        await OBR.popover.open({
+          id: PILL_ID, url: new URL("scene.html?mode=pill", import.meta.url).href, width: 420, height: 48,
+          anchorReference: "POSITION", anchorPosition: { left: Math.round(vw / 2), top: 10 },
+          anchorOrigin: { horizontal: "CENTER", vertical: "TOP" }, transformOrigin: { horizontal: "CENTER", vertical: "TOP" },
+          hidePaper: true, disableClickAway: true, marginThreshold: 0,
+        });
+      } else await OBR.popover.close(PILL_ID);
+      pillOpen = wantPill;
+    }
+    const key = sc.on && !(gm && peek) ? `${vw}x${vh}` : "off";
+    if (key === sceneKey) return;
+    if (key === "off") {
+      if (closeTimer) return;
+      // give the page time to fade out before it goes
+      closeTimer = setTimeout(async () => { closeTimer = null; await OBR.popover.close(SCENE_ID).catch(() => {}); sceneKey = "off"; }, sceneKey === "" || peek ? 0 : 900);
+      return;
+    }
+    if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+    await OBR.popover.open({
+      id: SCENE_ID, url: new URL("scene.html?mode=full", import.meta.url).href, width: vw, height: vh,
+      anchorReference: "POSITION", anchorPosition: { left: 0, top: 0 },
+      anchorOrigin: { horizontal: "LEFT", vertical: "TOP" }, transformOrigin: { horizontal: "LEFT", vertical: "TOP" },
+      hidePaper: true, disableClickAway: true, marginThreshold: 0,
+    });
+    sceneKey = key;
+    barRaise = true; runBar(); // keep the party bar on top of the backdrop
+  }
+  let sceneBusy = Promise.resolve();
+  const runScene = () => { sceneBusy = sceneBusy.then(syncScene).catch((err) => console.warn("[nimble scene]", err)); };
+  bc.onmessage = (e) => { if (e.data && "peek" in e.data) { peek = !!e.data.peek; runScene(); } };
+  OBR.room.onMetadataChange(runScene);
+  setInterval(runScene, 2000);
+  runScene();
 
   // Everything below runs for the GM only, so there is one writer.
   const role = await OBR.player.getRole();

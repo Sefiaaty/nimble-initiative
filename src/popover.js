@@ -7,6 +7,7 @@ import {
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
   clean, tempOf, damage, giveTemp, jumpTo,
   PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, partyOf, partyList, isHero, itemName,
+  SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo,
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -84,10 +85,80 @@ function render() {
   if (a && app.contains(a) && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && a.type !== "checkbox") { pendingRender = true; return; }
   pendingRender = false;
   if (!isGM()) { app.innerHTML = `<div class="empty">The GM is running the initiative tracker.</div>`; return; }
-  app.innerHTML = (isGM() ? `<nav class="tabs"><button class="${tab === "init" ? "on" : ""}" data-act="tab" data-t="init">Initiative</button><button class="${tab === "lib" ? "on" : ""}" data-act="tab" data-t="lib">Monster Library</button><button class="${tab === "party" ? "on" : ""}" data-act="tab" data-t="party">Party</button></nav>` : "")
-    + (tab === "lib" && isGM() ? renderLibrary() : tab === "party" && isGM() ? renderParty() : renderInit());
+  app.innerHTML = (isGM() ? `<nav class="tabs"><button class="${tab === "init" ? "on" : ""}" data-act="tab" data-t="init">Initiative</button><button class="${tab === "lib" ? "on" : ""}" data-act="tab" data-t="lib">Monster Library</button><button class="${tab === "party" ? "on" : ""}" data-act="tab" data-t="party">Party</button><button class="${tab === "scene" ? "on" : ""}" data-act="tab" data-t="scene">Scene</button></nav>` : "")
+    + (tab === "lib" && isGM() ? renderLibrary() : tab === "party" && isGM() ? renderParty() : tab === "scene" && isGM() ? renderScene() : renderInit());
 }
 app.addEventListener("focusout", () => setTimeout(() => { if (pendingRender) render(); }, 0));
+
+// ================================================================ scene
+const PRESETS_KEY = `${SCENE_KEY}/presets`;
+const sceneBc = new BroadcastChannel(SCENE_CH);
+let sceneDraft = null;   // { url, kind, title, sub } being edited
+let scenePeek = false;
+try { scenePeek = localStorage.getItem(PEEK_KEY) === "1"; } catch (_) {}
+sceneBc.onmessage = (e) => { if (e.data && "peek" in e.data) { scenePeek = !!e.data.peek; if (tab === "scene") render(); } };
+const loadPresets = () => { try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || "[]"); } catch (_) { return []; } };
+const savePresets = (l) => { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(l)); } catch (_) {} };
+function setScenePeek(v) {
+  scenePeek = v;
+  try { localStorage.setItem(PEEK_KEY, v ? "1" : "0"); } catch (_) {}
+  sceneBc.postMessage({ peek: v });
+}
+const mediaTag = (url, kind, cls) => !url ? "" : isVideo(url, kind)
+  ? `<video class="${cls}" src="${esc(url)}" autoplay loop muted playsinline></video>`
+  : `<img class="${cls}" src="${esc(url)}" alt="">`;
+
+function renderScene() {
+  const live = sceneOf(roomMd);
+  if (!sceneDraft) sceneDraft = live.url ? { url: live.url, kind: live.kind, title: live.title, sub: live.sub } : { url: "", kind: "", title: "", sub: "" };
+  const d = sceneDraft;
+  const same = live.on && live.url === d.url && live.title === d.title && live.sub === d.sub;
+  const presets = loadPresets();
+  return `<div class="scene">
+    ${live.on ? `<div class="slive"><b>Live:</b> ${esc(live.title || "untitled scene")}
+      <button data-act="scpeek" title="Hide the scene for you only, so you can work on the map">${scenePeek ? "Back to scene" : "Peek"}</button>
+      <button class="send" data-act="scend" title="Fade the scene out for everyone">End scene</button></div>` : ""}
+    <div class="sprev">${d.url ? mediaTag(d.url, d.kind, "sp") : `<div class="sp empty">Pick a picture or paste a link</div>`}
+      <div class="scap"><div class="t">${esc(d.title)}</div><div class="s">${esc(d.sub)}</div></div></div>
+    <div class="srow"><input type="text" data-act="scurl" placeholder="Image, GIF or video link" value="${esc(d.url)}"><button data-act="scpick" title="Choose from your Owlbear uploads">My uploads</button></div>
+    <input type="text" data-act="sctitle" placeholder="Caption (e.g. The Rusty Tankard)" value="${esc(d.title)}">
+    <input type="text" data-act="scsub" placeholder="Small line under it (optional)" value="${esc(d.sub)}">
+    <div class="srow"><button class="sgo" data-act="scshow" ${d.url ? "" : "disabled"}>${live.on ? (same ? "Showing" : "Update scene") : "Show scene"}</button>
+      <button data-act="scsave" ${d.url ? "" : "disabled"} title="Keep this backdrop and caption for later">Save preset</button></div>
+    ${presets.length ? `<div class="spresets"><div class="muted small">Presets</div>${presets.map((x, i) => `<div class="spre">
+      ${mediaTag(x.url, x.kind, "spt")}<span>${esc(x.title || "Untitled")}</span>
+      <button data-act="scload" data-i="${i}" title="Load into the editor">Edit</button><button class="sgo" data-act="scquick" data-i="${i}" title="Show it now">Show</button><button class="pdel" data-act="scdel" data-i="${i}" title="Delete preset">✕</button></div>`).join("")}</div>` : ""}
+    <div class="muted small">Everyone sees the scene over the map until you end it. The party bar stays on top. Peek hides it for you only, so you can set up the battle map behind it.</div>
+  </div>`;
+}
+
+async function showScene(x) {
+  await OBR.room.setMetadata({ [SCENE_KEY]: { on: true, url: x.url, kind: x.kind || "", title: x.title || "", sub: x.sub || "", at: Date.now() } });
+}
+async function handleScene(act, el) {
+  const d = sceneDraft || (sceneDraft = { url: "", kind: "", title: "", sub: "" });
+  const presets = loadPresets();
+  if (act === "scpick") {
+    try {
+      const picked = await OBR.assets.downloadImages(false);
+      if (picked && picked[0]) {
+        const im = picked[0].image || {};
+        d.url = im.url || ""; d.kind = String(im.mime || "").startsWith("video") ? "video" : "";
+        if (!d.title && picked[0].name) d.title = picked[0].name;
+      }
+    } catch (err) { OBR.notification.show("Couldn't open your uploads", "WARNING"); }
+    render(); return;
+  }
+  if (act === "scshow") { if (d.url) { await showScene(d); setScenePeek(false); } return; }
+  if (act === "scend") { setScenePeek(false); const live = roomMd[SCENE_KEY] || {}; await OBR.room.setMetadata({ [SCENE_KEY]: { ...live, on: false, at: Date.now() } }); return; }
+  if (act === "scpeek") { setScenePeek(!scenePeek); render(); return; }
+  if (act === "scsave") { if (!d.url) return; presets.unshift({ url: d.url, kind: d.kind, title: d.title, sub: d.sub }); savePresets(presets.slice(0, 40)); render(); return; }
+  const x = presets[Number(el.dataset.i)];
+  if (!x) return;
+  if (act === "scload") { sceneDraft = { ...x }; render(); return; }
+  if (act === "scquick") { sceneDraft = { ...x }; await showScene(x); setScenePeek(false); render(); return; }
+  if (act === "scdel") { presets.splice(Number(el.dataset.i), 1); savePresets(presets); render(); return; }
+}
 
 // ================================================================ initiative
 function phaseText(s) {
@@ -246,6 +317,7 @@ async function loadStat(e) {
 // ---- actions ----
 async function handle(act, el) {
   const id = el.dataset.id;
+  if (act.startsWith("sc")) return handleScene(act, el);
   if (act === "roll") { await rollDice(el.dataset.n, el.dataset.what); return; }
   if (act === "rollto") { rollTarget = rollTarget === "self" ? "everyone" : "self"; try { localStorage.setItem(ROLL_PREF, rollTarget); } catch (_) {} render(); return; }
   if (act === "tab") { tab = el.dataset.t; if (tab === "party") await loadHeroNames(); render(); return; }
@@ -692,6 +764,21 @@ app.addEventListener("keydown", (ev) => {
 });
 app.addEventListener("input", (ev) => {
   const el = ev.target;
+  if (el.dataset.act === "scurl" || el.dataset.act === "sctitle" || el.dataset.act === "scsub") {
+    const d = sceneDraft || (sceneDraft = { url: "", kind: "", title: "", sub: "" });
+    if (el.dataset.act === "scurl") { d.url = el.value.trim(); d.kind = ""; }
+    if (el.dataset.act === "sctitle") d.title = el.value;
+    if (el.dataset.act === "scsub") d.sub = el.value;
+    const prev = app.querySelector(".sprev");
+    if (prev) {
+      if (el.dataset.act === "scurl") prev.querySelector(".sp").outerHTML = d.url ? mediaTag(d.url, d.kind, "sp") : `<div class="sp empty">Pick a picture or paste a link</div>`;
+      prev.querySelector(".scap .t").textContent = d.title;
+      prev.querySelector(".scap .s").textContent = d.sub;
+    }
+    const go = app.querySelector('[data-act="scshow"]'), sv = app.querySelector('[data-act="scsave"]');
+    if (go) go.disabled = !d.url; if (sv) sv.disabled = !d.url;
+    return;
+  }
   if (el.dataset.act === "libq") {
     libQuery = el.value;
     const list = app.querySelector(".liblist");
@@ -791,7 +878,7 @@ setInterval(checkOpenRequest, 700); // same-window fallback (the storage event o
 OBR.onReady(async () => {
   role = await OBR.player.getRole();
   roomMd = await OBR.room.getMetadata();
-  OBR.room.onMetadataChange(async (md) => { roomMd = md; if (tab === "party") { await loadHeroNames(); render(); } });
+  OBR.room.onMetadataChange(async (md) => { roomMd = md; if (tab === "party") { await loadHeroNames(); render(); } else if (tab === "scene") render(); });
   try { players = await OBR.party.getPlayers(); } catch (_) {}
   OBR.party.onChange((pl) => { players = pl; if (tab === "party") render(); });
   applyTheme(await OBR.theme.getTheme());

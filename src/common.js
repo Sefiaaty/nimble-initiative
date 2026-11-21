@@ -11,6 +11,14 @@ export const OPEN_KEY = `${ID}/open`;     // localStorage: ask the popover to op
 export const NEXUS = "https://nimble.nexus";
 export const PARTY_KEY = `${ID}/party`;   // room metadata: party bar settings
 export const TALK_CH = `${ID}/talk`;      // broadcast channel: who is talking
+export const SCENE_KEY = `${ID}/scene`;   // room metadata: the scene backdrop shown to everyone
+export const PEEK_KEY = `${ID}/peek`;     // GM's browser: hide the backdrop for me only
+export const SCENE_CH = "nimble-scene";   // BroadcastChannel between this browser's extension frames
+export function sceneOf(md) {
+  const s = (md && md[SCENE_KEY]) || {};
+  return { on: !!s.on && !!s.url, url: s.url || "", kind: s.kind || "", title: s.title || "", sub: s.sub || "", at: s.at || 0 };
+}
+export const isVideo = (url, kind) => kind === "video" || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url || "");
 export const CLASSES = ["Berserker", "Commander", "Hunter", "Mage", "Oathsworn", "Shadowmancer", "Shepherd", "Songweaver", "Stormshifter", "The Cheat", "Zephyr"];
 export function partyOf(md) {
   const p = (md && md[PARTY_KEY]) || {};

@@ -29,7 +29,8 @@ const nudged = new Map();    // pid -> at
 let own = { hand: false, brb: false };
 try { own = { ...own, ...JSON.parse(localStorage.getItem(OWN_PREF) || "{}") }; } catch (_) {}
 let mic = { state: "off", stream: null, ctx: null, timer: null, on: false, sentAt: 0, note: "" };
-let openUi = null;           // "emote" | "say" | "whisper" | { read: pid }
+let openUi = null;           // "emote" | "say" | "whisper" | { read: pid } | { frame: url }
+let draft = null;            // GM framing a picture: { u, x, y, z } (x/y in % of the card width)
 let gmBell = false;          // GM has enabled ping sounds (needs a click first)
 let audio = null;
 let lastHtml = "";
@@ -139,7 +140,9 @@ function render() {
         <button data-act="whisper" title="Whisper to the GM (only the GM sees it)">✉</button>
         <button class="${own.brb ? "on" : ""}" data-act="brb" title="Be right back">☕</button>
       </div>` : "";
-    const gmTools = gm && pid ? `<div class="gmtools">
+    const gmTools = gm && !pid ? `<div class="gmtools"><button data-act="frame" data-url="${esc(u)}" title="Move / zoom this picture">✥</button></div>`
+      : gm && pid ? `<div class="gmtools">
+        <button data-act="frame" data-url="${esc(u)}" title="Move / zoom this picture">✥</button>
         <button data-act="nudge" data-pid="${esc(pid)}" title="Turn to them: their card pulses and they hear a soft chime">🔔</button>
         <button data-act="moment" data-pid="${esc(pid)}" title="Had a moment (resets the quiet timer)">★</button>
         <button data-act="insp+" data-url="${esc(u)}" title="Give Inspiration">✦+</button>
@@ -149,7 +152,9 @@ function render() {
       : gm && pid && !brb ? `<div class="nomic" title="Their talking light is off, so airtime isn't counted">no mic</div>` : "";
     const cls = ["card", isTalking && "talk", turnUrls.has(u) && "turn", quietLong && "isquiet", quietSet.has(pid) && "lowair", brb && "brb", nudgeOn && "nudge", mine && "mine"].filter(Boolean).join(" ");
     const w = L.widths[u];
-    return { u, pid, w, cls, inner: `
+    const sf = (m.frame && m.frame[p.style]) || {};
+    const fr = draft && draft.u === u ? draft : { x: Number(sf.x) || 0, y: Number(sf.y) || 0, z: Number(sf.z) || 1 };
+    return { u, pid, w, fr, cls: cls + (draft && draft.u === u ? " framing" : ""), inner: `
       ${say && now - say.at < Math.min(16000, 6000 + say.text.length * 60) ? `<div class="say">${esc(say.text)}</div>` : ""}
       ${askNext === pid ? `<div class="asknext">▼ ask next</div>` : ""}
       ${em && now - em.at < 3500 ? `<div class="emote" data-at="${em.at}">${esc(em.e)}</div>` : ""}
@@ -184,12 +189,18 @@ function patchCards(cards) {
     if (el.className !== c.cls) el.className = c.cls;
     if (el.dataset.pid !== c.pid) el.dataset.pid = c.pid;
     if (el.style.getPropertyValue("--w") !== `${c.w}px`) el.style.setProperty("--w", `${c.w}px`);
+    setFrameVars(el, c.fr);
     if (el._inner !== c.inner) { el.innerHTML = c.inner; el._inner = c.inner; }
     const want = prev ? prev.nextSibling : bar.firstChild;
     if (want !== el) bar.insertBefore(el, want);
     prev = el;
   }
   if (extras.parentNode !== bar) bar.appendChild(extras);
+}
+
+function setFrameVars(el, fr) {
+  const v = { "--fx": String(fr.x), "--fy": String(fr.y), "--fz": String(fr.z) };
+  for (const [k, val] of Object.entries(v)) if (el.style.getPropertyValue(k) !== val) el.style.setProperty(k, val);
 }
 
 // Composer / emote picker / whisper reader live outside the bar, so the 1-second redraw doesn't eat what you type.
@@ -205,6 +216,10 @@ function renderLayer() {
       <input type="text" maxlength="140" placeholder="${openUi === "say" ? "Shown above your card for everyone" : "Only the GM sees this"}" autocomplete="off">
       <button type="submit">Send</button><button type="button" class="x" data-act="close">✕</button></form>`;
     setTimeout(() => { const i = layer.querySelector("input"); if (i) i.focus(); }, 0);
+  } else if (openUi && openUi.frame) {
+    layer.innerHTML = `<div class="panel framer"><span>Drag to move · scroll to zoom</span>
+      <button data-act="fzoom" data-d="-0.1">−</button><button data-act="fzoom" data-d="0.1">+</button>
+      <button data-act="freset">Reset</button><button class="ok" data-act="flock">Lock ✓</button><button class="x" data-act="fcancel">✕</button></div>`;
   } else if (openUi && openUi.read) {
     const list = whispers.get(openUi.read) || [];
     layer.innerHTML = `<div class="panel reader"><b>Whispers</b>${list.map((w) => `<p>${esc(w.text)}</p>`).join("")}
@@ -212,7 +227,8 @@ function renderLayer() {
   }
   // place it above my card (or the card being read)
   const pid = openUi && openUi.read ? openUi.read : me.id;
-  const card = bar.querySelector(`.card[data-pid="${CSS.escape(pid)}"]`);
+  const card = openUi && openUi.frame ? [...bar.querySelectorAll(".card")].find((x) => x.dataset.url === openUi.frame)
+    : bar.querySelector(`.card[data-pid="${CSS.escape(pid)}"]`);
   const panel = layer.firstElementChild;
   if (card && panel) {
     const r = card.getBoundingClientRect();
@@ -348,6 +364,26 @@ async function act(a, el) {
       ev({ k: "nudge", pid }); lastTalk.set(pid, Date.now()); return;
     case "moment":
       lastTalk.set(pid, Date.now()); render(); return;
+    case "frame": {
+      if (!isGM()) return;
+      const u = el.dataset.url, p = partyOf(roomMd), m = p.members[u] || {};
+      const sf = (m.frame && m.frame[p.style]) || {};
+      draft = { u, x: Number(sf.x) || 0, y: Number(sf.y) || 0, z: Number(sf.z) || 1 };
+      openUi = { frame: u }; layer.dataset.ui = ""; render(); return;
+    }
+    case "fzoom": if (draft) { draft.z = clampZ(draft.z + Number(el.dataset.d)); render(); } return;
+    case "freset": if (draft) { draft.x = 0; draft.y = 0; draft.z = 1; render(); } return;
+    case "fcancel": draft = null; openUi = null; render(); return;
+    case "flock": {
+      if (!draft) return;
+      const d = draft;
+      const md = await OBR.room.getMetadata();
+      const p = partyOf(md);
+      const m = (p.members[d.u] ||= {});
+      m.frame = { ...(m.frame || {}), [p.style]: { x: Math.round(d.x * 10) / 10, y: Math.round(d.y * 10) / 10, z: Math.round(d.z * 100) / 100 } };
+      await OBR.room.setMetadata({ [PARTY_KEY]: p });
+      draft = null; openUi = null; render(); return;
+    }
     case "insp+": await setInsp(el.dataset.url, 1); return;
     case "insp-": await setInsp(el.dataset.url, -1); return;
     case "spend": {
@@ -368,7 +404,7 @@ document.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-act]");
   if (btn && btn.tagName !== "FORM") { e.stopPropagation(); if (!btn.disabled) await act(btn.dataset.act, btn); return; }
   const card = e.target.closest(".card");
-  if (!card) return;
+  if (!card || card.classList.contains("framing") || dragMoved) return;
   const tok = tokens.get(card.dataset.url);
   if (tok) { try { await OBR.viewport.animateToBounds(await OBR.scene.items.getItemBounds([tok.id])); } catch (_) {} }
 });
@@ -381,6 +417,37 @@ layer.addEventListener("submit", (e) => {
 });
 layer.addEventListener("keydown", (e) => { if (e.key === "Escape") { openUi = null; renderLayer(); } });
 window.addEventListener("resize", render);
+
+// ---------- GM framing: drag the picture, scroll to zoom ----------
+const clampZ = (z) => Math.max(0.3, Math.min(4, z));
+let drag = null, dragMoved = false;
+bar.addEventListener("pointerdown", (e) => {
+  const card = e.target.closest(".card.framing");
+  if (!card || !draft || e.target.closest("button")) return;
+  e.preventDefault();
+  drag = { x: e.clientX, y: e.clientY, fx: draft.x, fy: draft.y, w: card.offsetWidth || 140 };
+  dragMoved = false;
+  card.setPointerCapture(e.pointerId);
+});
+bar.addEventListener("pointermove", (e) => {
+  if (!drag || !draft) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 2) dragMoved = true;
+  draft.x = drag.fx + (dx / drag.w) * 100;
+  draft.y = drag.fy + (dy / drag.w) * 100;
+  const card = [...bar.querySelectorAll(".card")].find((x) => x.dataset.url === draft.u);
+  if (card) setFrameVars(card, draft);
+});
+const endDrag = () => { drag = null; setTimeout(() => { dragMoved = false; }, 0); };
+bar.addEventListener("pointerup", endDrag);
+bar.addEventListener("pointercancel", endDrag);
+bar.addEventListener("wheel", (e) => {
+  const card = e.target.closest(".card.framing");
+  if (!card || !draft) return;
+  e.preventDefault();
+  draft.z = clampZ(draft.z * (e.deltaY < 0 ? 1.06 : 1 / 1.06));
+  setFrameVars(card, draft);
+}, { passive: false });
 
 // ---------- incoming ----------
 function onEvent(d) {

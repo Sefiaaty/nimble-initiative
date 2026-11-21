@@ -118,3 +118,13 @@ body.cutouts .frame{margin-bottom:0}
 
 body.cutouts .art{left:0;right:0}
 body.cutouts .cut{max-width:100%}
+/* GM framing: each picture can be moved and zoomed, saved per hero */
+.art,.cut{translate:calc(var(--fx,0) * var(--w) / 100) calc(var(--fy,0) * var(--w) / 100);scale:var(--fz,1)}
+.card.framing{z-index:6}
+.card.framing .frame{cursor:move;outline:2px dashed #ffcf4a;outline-offset:2px;touch-action:none}
+body.cutouts .card.framing .frame{outline:2px dashed #ffcf4a}
+.card.framing .gmtools,.card.framing .tools{display:none}
+.card.framing .cut,.card.framing .art{filter:none!important}
+#layer .framer span{opacity:.85;margin-right:2px}
+#layer .framer button{min-width:24px}
+#layer .framer .ok{background:#ffcf4a;color:#17120e;border-radius:8px;padding:2px 8px}

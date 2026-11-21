@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nimble mic</title>
+<style>
+html,body{margin:0;background:#1e2231;color:#efe6d2;font:14px system-ui,sans-serif}
+main{padding:14px;display:flex;flex-direction:column;gap:10px}
+h1{font-size:15px;margin:0}
+.meter{height:12px;border-radius:6px;background:#2d3143;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:#4caf6e;transition:width .05s}
+.meter.talk i{background:#ffcf4a}
+button{font:inherit;padding:6px 12px;border:0;border-radius:14px;background:#bb99ff;color:#000;font-weight:600;cursor:pointer;align-self:flex-start}
+.s{color:#ffffffb3;font-size:13px;line-height:1.35}
+.bad{color:#ff8a80}
+</style></head>
+<body><main>
+<h1>🎙 Nimble talking light</h1>
+<div class="meter" id="m"><i></i></div>
+<div class="s" id="st">Starting…</div>
+<button id="go" hidden>Allow microphone</button>
+<div class="s">Keep this little window open (you can put it behind Owlbear). Close it to turn the light off.</div>
+</main><script type="module" src="mic.js"></script></body></html>

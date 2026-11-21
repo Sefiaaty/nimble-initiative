@@ -57,6 +57,7 @@ async function startMic() {
   try {
     mic.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (err) {
+    if (await openHelper()) return;
     mic.state = "blocked";
     mic.note = err && err.name === "NotAllowedError"
       ? "Microphone not allowed here. Check your browser's mic permission for Owlbear, or Owlbear may not allow extensions to use it."
@@ -107,12 +108,40 @@ function send(on) {
   OBR.broadcast.sendMessage(TALK_CH, { pid: me.id, on }, { destination: "ALL" }).catch(() => {});
 }
 
+// ---------- helper window (Owlbear frames can't use the mic) ----------
+let helper = null;
+async function openHelper() {
+  const url = new URL("mic.html", import.meta.url).href;
+  let w = null;
+  try { w = window.open("", "nimble-mic", "width=380,height=230"); } catch (_) {}
+  if (!w) return false; // popup blocked
+  let fresh = false;
+  try { fresh = w.location.href === "about:blank"; } catch (_) { fresh = false; }
+  if (fresh) w.location.href = url; else w.postMessage({ type: "nimble-hello" }, location.origin);
+  helper = w;
+  mic.state = "on"; mic.helper = true;
+  render();
+  return true;
+}
+window.addEventListener("message", (e) => {
+  if (e.origin !== location.origin || !e.data || e.data.type !== "nimble-talk") return;
+  if (mic.state !== "on") { mic.state = "on"; mic.helper = true; render(); }
+  send(!!e.data.on);
+});
+setInterval(() => {
+  if (mic.helper && helper && helper.closed) { helper = null; if (mic.on) send(false); mic = { state: "off", stream: null, ctx: null, timer: null, on: false, sentAt: 0, note: "" }; render(); }
+}, 1500);
+
 // ---------- events ----------
 bar.addEventListener("click", async (ev) => {
   const btn = ev.target.closest("[data-act]");
   if (btn) {
     ev.stopPropagation();
-    if (btn.dataset.act === "mic") { if (mic.state === "on") stopMic(); else startMic(); }
+    if (btn.dataset.act === "mic") {
+      if (mic.state === "on" && mic.helper) { try { helper && helper.close(); } catch (_) {} helper = null; if (mic.on) send(false); mic = { state: "off", stream: null, ctx: null, timer: null, on: false, sentAt: 0, note: "" }; render(); }
+      else if (mic.state === "on") stopMic();
+      else startMic();
+    }
     if (btn.dataset.act === "star") { lastTalk.set(btn.dataset.pid, Date.now()); render(); }
     return;
   }
@@ -159,5 +188,11 @@ OBR.onReady(async () => {
     render();
   });
   setInterval(render, 1000); // fade out stale "talking" and update quiet timers
-  if (prefOn()) startMic();
+  if (prefOn() && !mic.helper) {
+    // only retry automatically if the frame itself can use the mic (no popup without a click)
+    try {
+      const st = await navigator.permissions.query({ name: "microphone" });
+      if (st.state === "granted") startMic();
+    } catch (_) {}
+  }
 });

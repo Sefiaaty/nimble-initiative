@@ -122,7 +122,7 @@ OBR.onReady(async () => {
     const vh = await OBR.viewport.getHeight();
     const cw = Math.max(70, Math.min(150, Math.floor((vw - 80) / Math.max(n, 1)) - 6));
     const width = Math.min(vw - 40, n * (cw + 6) + 16);
-    const height = Math.round(cw * 1.37) + 34; // card + name + player plate + room to rise
+    const height = Math.round(cw * 1.37) + 120; // card + name + plate, plus room above for speech bubbles, emotes and panels
     const key = show ? `${vw}x${vh}:${n}` : "off";
     if (key === barKey) return;
     barKey = key;

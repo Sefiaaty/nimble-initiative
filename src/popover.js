@@ -337,6 +337,8 @@ let roomMd = {};
 let players = [];
 let heroNames = new Map(); // image url -> token name in this scene
 let confirmDel = null;      // image url waiting for a second click on Remove
+let confirmReset = false;
+const STATS_KEY = "com.shade.nimble-initiative/talkstats";
 
 function renderParty() {
   const p = partyOf(roomMd);
@@ -367,7 +369,27 @@ function renderParty() {
       <label class="auto"><input type="checkbox" data-act="ptyshow" ${p.show ? "checked" : ""}> Show the party bar to everyone</label>
       <div class="muted small">Heroes come from <b>Mark as Hero</b>. Pick each hero's player so their card lights up when they talk: each player turns on the 🎙 button on their own card.</div>
     </div>
-    <div class="plist">${rows || `<div class="empty">No heroes yet. Right-click hero tokens and choose <b>Mark as Hero</b>.</div>`}</div>`;
+    <div class="plist">${rows || `<div class="empty">No heroes yet. Right-click hero tokens and choose <b>Mark as Hero</b>.</div>`}</div>
+    ${renderRecap(ordered, p)}`;
+}
+
+// Session recap from the party bar: airtime, raised hands, reactions, speech bubbles and whispers
+function renderRecap(ordered, p) {
+  const st = roomMd[STATS_KEY] || { since: Date.now(), p: {} };
+  const rows = ordered.map((u) => ({ u, m: p.members[u] || {} })).filter((r) => r.m.pid);
+  if (!rows.length) return "";
+  const total = Math.max(1, rows.reduce((t, r) => t + ((st.p[r.m.pid] || {}).ms || 0), 0));
+  const mins = Math.max(1, Math.round((Date.now() - st.since) / 60000));
+  const fmt = (ms) => (ms >= 60000 ? `${Math.round(ms / 60000)}m` : `${Math.round(ms / 1000)}s`);
+  const sorted = [...rows].sort((a, b) => ((st.p[a.m.pid] || {}).ms || 0) - ((st.p[b.m.pid] || {}).ms || 0));
+  return `<div class="recap"><div class="rhead"><b>Session recap</b><span class="muted small">last ${mins} min</span>
+      <button data-act="ptyreset" title="Start counting a new session">${confirmReset ? "Sure?" : "Reset"}</button></div>
+    <table><tr><th></th><th>Talk</th><th>✋</th><th>😀</th><th>💬</th><th>✉</th><th>✦</th></tr>
+    ${sorted.map(({ u, m }) => { const x = st.p[m.pid] || {}; const ms = x.ms || 0; return `<tr>
+      <td>${esc(m.name || heroNames.get(u) || "Hero")}</td>
+      <td><span class="rbar"><i style="width:${Math.round((ms / total) * 100)}%"></i></span> ${Math.round((ms / total) * 100)}% <span class="muted">${fmt(ms)}</span></td>
+      <td>${x.hands || 0}</td><td>${x.emotes || 0}</td><td>${x.says || 0}</td><td>${x.whispers || 0}</td><td>${Number(m.insp) || 0}</td></tr>`; }).join("")}
+    </table><div class="muted small">Talk only counts players with the 🎙 talking light on. Least talking at the top.</div></div>`;
 }
 
 async function saveParty(fn) {
@@ -390,6 +412,11 @@ async function handleParty(act, el) {
     });
   }
   if (act === "ptyhide") await saveParty((p) => { mem(p).hidden = !mem(p).hidden; });
+  if (act === "ptyreset") {
+    if (!confirmReset) { confirmReset = true; render(); setTimeout(() => { confirmReset = false; render(); }, 4000); return; }
+    confirmReset = false;
+    await OBR.room.setMetadata({ [STATS_KEY]: { since: Date.now(), p: {} } });
+  }
   if (act === "ptydel") {
     if (confirmDel !== u) { confirmDel = u; render(); setTimeout(() => { if (confirmDel === u) { confirmDel = null; render(); } }, 4000); return; }
     confirmDel = null;

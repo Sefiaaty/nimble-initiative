@@ -14,11 +14,56 @@ html,body{margin:0;background:transparent;overflow:hidden;font-family:"Barlow Co
 .card.talk{filter:drop-shadow(0 0 10px rgba(255,207,74,.95)) drop-shadow(0 4px 6px rgba(0,0,0,.55))}
 .card.turn .frame{box-shadow:0 0 0 3px #ffcf4a}
 .card.turn .name{background:linear-gradient(#fff3c4,#f2d27a)}
-.mic{position:absolute;right:3px;top:3px;z-index:3;border:0;border-radius:10px;padding:2px 6px;font:700 11px "Barlow Condensed",sans-serif;cursor:pointer;background:rgba(23,18,14,.75);color:#efe6d2}
-.mic.on{background:#2e7d4f}
-.mic.blocked{background:#8a2a22}
-.star{position:absolute;right:3px;bottom:3px;z-index:3;border:0;border-radius:10px;padding:1px 6px;font:700 11px "Barlow Condensed",sans-serif;cursor:pointer;background:rgba(23,18,14,.75);color:#ffcf4a;opacity:0;transition:opacity .15s}
-.card:hover .star{opacity:1}
 .quiet{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);z-index:3;background:rgba(138,42,34,.92);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;font-weight:700;white-space:nowrap}
 .card.isquiet .frame{border-color:#8a2a22}
 .note{position:fixed;bottom:4px;left:50%;transform:translateX(-50%);background:rgba(23,18,14,.85);color:#efe6d2;font-size:12px;padding:3px 9px;border-radius:9px}
+
+.card{overflow:visible}
+/* my own card: action buttons along the bottom of the portrait */
+.tools{position:absolute;left:0;right:0;bottom:2px;display:flex;justify-content:center;gap:2px;z-index:4;opacity:.92}
+.tools button,.gmtools button{border:0;border-radius:8px;padding:0;width:calc(var(--w)*.15);height:calc(var(--w)*.15);min-width:18px;min-height:18px;font-size:calc(var(--w)*.09);line-height:1;cursor:pointer;background:rgba(23,18,14,.78);color:#efe6d2}
+.tools button.on{background:#2e7d4f}
+.tools button.blocked{background:#8a2a22}
+.tools button[data-act=hand].on{background:#c98a12}
+.tools button[data-act=brb].on{background:#5a5f73}
+/* GM tools on other cards, on hover */
+.gmtools{position:absolute;left:0;right:0;bottom:2px;display:flex;justify-content:center;gap:2px;z-index:4;opacity:0;transition:opacity .15s}
+.card:hover .gmtools{opacity:1}
+.gmtools button:disabled{opacity:.4}
+/* raised hand: speech bubble with "!" */
+.hand{position:absolute;right:-8px;top:-10px;z-index:5;width:calc(var(--w)*.26);height:calc(var(--w)*.22);min-width:26px;min-height:22px;border:3px solid #17120e;border-radius:12px 12px 12px 3px;background:#fff6dc;color:#b3261e;font:900 calc(var(--w)*.15) "Barlow Condensed",sans-serif;cursor:pointer;animation:bob 1s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-4px) rotate(-6deg)}}
+.mail{position:absolute;right:calc(var(--w)*.22);top:-8px;z-index:5;border:3px solid #17120e;border-radius:8px;background:#bb99ff;color:#17120e;font:700 calc(var(--w)*.1) "Barlow Condensed",sans-serif;padding:0 5px;cursor:pointer}
+.insp{position:absolute;left:4px;bottom:calc(var(--w)*.17);z-index:4;border:2px solid #17120e;border-radius:10px;background:#ffcf4a;color:#17120e;font:800 calc(var(--w)*.1) "Barlow Condensed",sans-serif;padding:0 6px;cursor:pointer;box-shadow:0 0 8px rgba(255,207,74,.8)}
+.card:not(.mine) .insp{cursor:default}
+/* speech bubble above the card */
+.say{position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);width:max-content;max-width:calc(var(--w)*1.7);z-index:6;background:#fffaf0;color:#17120e;border:3px solid #17120e;border-radius:14px;padding:5px 9px;font:600 14px "Barlow Condensed",sans-serif;line-height:1.15;text-align:center;animation:pop .25s ease-out;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.say::after{content:"";position:absolute;left:50%;top:100%;margin-left:-8px;border:8px solid transparent;border-top-color:#17120e}
+@keyframes pop{from{transform:translateX(-50%) scale(.6);opacity:0}}
+/* quick reaction floats up */
+.emote{position:absolute;left:50%;top:20%;z-index:6;font-size:calc(var(--w)*.3);transform:translateX(-50%);animation:floatup 3.5s ease-out forwards;pointer-events:none}
+@keyframes floatup{0%{opacity:0;transform:translate(-50%,10px) scale(.6)}10%{opacity:1;transform:translate(-50%,0) scale(1.15)}70%{opacity:1}100%{opacity:0;transform:translate(-50%,-70px) scale(1)}}
+/* BRB */
+.card.brb .art{filter:grayscale(1) brightness(.55)}
+.brbtag{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:800 calc(var(--w)*.18) "Barlow Condensed",sans-serif;color:#efe6d2;letter-spacing:.1em;z-index:3;pointer-events:none}
+/* nudge: the GM turns to you */
+.card.nudge .frame{animation:pulse .7s ease-in-out 4}
+@keyframes pulse{50%{box-shadow:0 0 0 4px #ffcf4a,0 0 24px 8px rgba(255,207,74,.9)}}
+/* GM: airtime meter, quiet outline, ask next */
+.player{position:relative}
+.air{margin:2px 9px 0;height:4px;background:rgba(23,18,14,.6);border-radius:2px;overflow:hidden}
+.air i{display:block;height:100%;background:#4fc3f7}
+.nomic{margin:2px auto 0;width:max-content;font-size:10px;line-height:12px;color:#efe6d2;background:rgba(23,18,14,.75);padding:0 5px;border-radius:6px;white-space:nowrap}
+.card.lowair .frame{box-shadow:0 0 0 3px #4fc3f7,0 0 16px rgba(79,195,247,.85)}
+.asknext{position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);z-index:5;background:#4fc3f7;color:#0b2230;font-weight:700;font-size:12px;padding:1px 8px;border-radius:9px;white-space:nowrap}
+.card:has(.say) .asknext{display:none}
+.bell{position:fixed;left:4px;bottom:6px;z-index:7;border:0;border-radius:12px;padding:3px 7px;background:rgba(23,18,14,.8);color:#efe6d2;font-size:14px;cursor:pointer}
+.bell.on{background:#2e7d4f}
+/* panels: emote picker, composer, whisper reader */
+#layer .panel{position:fixed;z-index:8;background:#1e2231;color:#efe6d2;border:2px solid #17120e;border-radius:12px;padding:6px 8px;box-shadow:0 6px 18px rgba(0,0,0,.5);font:600 14px "Barlow Condensed",sans-serif;display:flex;align-items:center;gap:6px}
+#layer .emotes button{font-size:22px;background:none;border:0;cursor:pointer;padding:0 2px}
+#layer .compose input{width:220px;font:inherit;border:1px solid #444a66;border-radius:8px;background:#2d3143;color:#fff;padding:4px 7px}
+#layer .compose button[type=submit],#layer .reader button[data-act=done]{border:0;border-radius:10px;background:#bb99ff;color:#000;font:inherit;padding:3px 10px;cursor:pointer}
+#layer .reader{flex-direction:column;align-items:flex-start;max-width:280px}
+#layer .reader p{margin:2px 0;font-weight:500}
+#layer .x{border:0;background:none;color:#efe6d2;cursor:pointer;font-size:14px}

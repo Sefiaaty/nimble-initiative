@@ -67,3 +67,23 @@ html,body{margin:0;background:transparent;overflow:hidden;font-family:"Barlow Co
 #layer .reader{flex-direction:column;align-items:flex-start;max-width:280px}
 #layer .reader p{margin:2px 0;font-weight:500}
 #layer .x{border:0;background:none;color:#efe6d2;cursor:pointer;font-size:14px}
+
+/* ---- cut-out style: character PNGs without a background, dim until they talk ---- */
+body.cutouts .frame{border:0;outline:0;background:none;height:calc(var(--w)*1.15);overflow:visible;box-shadow:none}
+body.cutouts .frame::after{display:none}
+body.cutouts .art{left:-28%;right:-28%;top:0;bottom:0;background-size:contain;background-repeat:no-repeat;background-position:center bottom;
+  filter:brightness(.38) saturate(.45) drop-shadow(0 4px 6px rgba(0,0,0,.6));transition:filter .25s ease}
+body.cutouts .card{filter:none;z-index:1}
+body.cutouts .card.talk{z-index:3;filter:none}
+body.cutouts .card.talk .art{filter:brightness(1.06) saturate(1.08) drop-shadow(0 0 6px rgba(255,214,110,.95)) drop-shadow(0 0 16px rgba(255,190,60,.7))}
+body.cutouts .card.turn .art{filter:brightness(.7) saturate(.8) drop-shadow(0 0 6px rgba(255,207,74,.8))}
+body.cutouts .card.talk.turn .art{filter:brightness(1.06) saturate(1.08) drop-shadow(0 0 6px rgba(255,214,110,.95)) drop-shadow(0 0 16px rgba(255,190,60,.7))}
+body.cutouts .card.brb .art{filter:grayscale(1) brightness(.3)}
+body.cutouts .card.lowair .frame{box-shadow:none}
+body.cutouts .card.lowair .art{filter:brightness(.45) saturate(.5) drop-shadow(0 0 6px rgba(79,195,247,.95))}
+body.cutouts .card.nudge .frame{animation:none}
+body.cutouts .card.nudge .art{animation:cutpulse .7s ease-in-out 4}
+@keyframes cutpulse{50%{filter:brightness(1) drop-shadow(0 0 14px rgba(255,207,74,1))}}
+body.cutouts .card.talk .frame{border:0}
+body.cutouts .badge{z-index:5}
+body.cutouts .name{position:relative;z-index:4}

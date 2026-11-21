@@ -355,7 +355,7 @@ function renderParty() {
           <select data-act="ptycls" data-url="${esc(u)}" title="Class icon"><option value="">Class…</option>${CLASSES.map((c) => `<option ${m.cls === c ? "selected" : ""}>${c}</option>`).join("")}</select>
           <select data-act="ptypid" data-url="${esc(u)}" title="Which player plays this hero (their card lights up when they talk)"><option value="">Player…</option>${players.map((pl) => `<option value="${esc(pl.id)}" ${m.pid === pl.id ? "selected" : ""}>${esc(pl.name)}</option>`).join("")}${m.pid && !players.some((pl) => pl.id === m.pid) ? `<option value="${esc(m.pid)}" selected>${esc(m.pname || "Offline player")}</option>` : ""}</select>
         </div>
-        <input type="text" placeholder="Portrait image link (optional)" value="${esc(m.portrait || "")}" data-act="ptyport" data-url="${esc(u)}">
+        <input type="text" placeholder="${p.style === "cutouts" ? "Cut-out PNG link (transparent background)" : "Portrait image link (optional)"}" value="${esc(m.portrait || "")}" data-act="ptyport" data-url="${esc(u)}">
       </div>
       <div class="pbtns">
         <button data-act="ptyup" data-url="${esc(u)}" ${i === 0 ? "disabled" : ""} title="Move left">◀</button>
@@ -367,6 +367,9 @@ function renderParty() {
   }).join("");
   return `<div class="ptop">
       <label class="auto"><input type="checkbox" data-act="ptyshow" ${p.show ? "checked" : ""}> Show the party bar to everyone</label>
+      <label class="auto">Bar style <select data-act="ptystyle">
+        <option value="cards" ${p.style !== "cutouts" ? "selected" : ""}>Portrait cards</option>
+        <option value="cutouts" ${p.style === "cutouts" ? "selected" : ""}>Cut-outs (character PNGs, dim until they talk)</option></select></label>
       <div class="muted small">Heroes come from <b>Mark as Hero</b>. Pick each hero's player so their card lights up when they talk: each player turns on the 🎙 button on their own card.</div>
     </div>
     <div class="plist">${rows || `<div class="empty">No heroes yet. Right-click hero tokens and choose <b>Mark as Hero</b>.</div>`}</div>
@@ -445,6 +448,7 @@ async function partyField(el) {
   const v = el.type === "checkbox" ? el.checked : el.value.trim();
   await saveParty((p) => {
     if (el.dataset.act === "ptyshow") { p.show = v; return; }
+    if (el.dataset.act === "ptystyle") { p.style = v; return; }
     const m = (p.members[u] ||= {});
     if (el.dataset.act === "ptyname") m.name = v;
     if (el.dataset.act === "ptycls") m.cls = v;

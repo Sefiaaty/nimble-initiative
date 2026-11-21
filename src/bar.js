@@ -100,6 +100,7 @@ function render() {
   const p = partyOf(roomMd);
   const urls = partyList(roomMd);
   const w = cardWidth(urls.length);
+  document.body.classList.toggle("cutouts", p.style === "cutouts");
   const now = Date.now();
   const gm = isGM();
   // who is "quiet": players with a working mic, here (not BRB), ranked by airtime

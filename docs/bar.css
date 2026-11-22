@@ -128,3 +128,5 @@ body.cutouts .card.framing .frame{outline:2px dashed #ffcf4a}
 #layer .framer span{opacity:.85;margin-right:2px}
 #layer .framer button{min-width:24px}
 #layer .framer .ok{background:#ffcf4a;color:#17120e;border-radius:8px;padding:2px 8px}
+/* small cards (phones): the six player buttons wrap into two rows instead of spilling off the card */
+.tools{flex-wrap:wrap;align-content:flex-end;padding:0 2px;box-sizing:border-box}

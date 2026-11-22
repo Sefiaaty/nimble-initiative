@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -115,10 +115,12 @@ OBR.onReady(async () => {
   const BAR_ID = `${ID}/bar`;
   let barKey = "";
   let barRaise = false; // reopen the bar so it sits above a scene backdrop
+  let barHidden = false; // the GM can hide the bar on their own screen
+  try { barHidden = localStorage.getItem(BAR_HIDDEN_KEY) === "1"; } catch (_) {}
   async function syncBar() {
     const md = await OBR.room.getMetadata();
     const n = partyList(md).length;
-    const show = partyOf(md).show && n > 0;
+    const show = partyOf(md).show && n > 0 && !barHidden;
     const vw = await OBR.viewport.getWidth();
     const vh = await OBR.viewport.getHeight();
     const L = barLayout(md, vw);
@@ -212,6 +214,7 @@ OBR.onReady(async () => {
   const runScene = () => { sceneBusy = sceneBusy.then(syncScene).catch((err) => console.warn("[nimble scene]", err)); };
   bc.onmessage = (e) => {
     if (e.data && "peek" in e.data) { peek = !!e.data.peek; runScene(); }
+    if (e.data && "barHidden" in e.data) { barHidden = !!e.data.barHidden; runBar(); }
     if (e.data && e.data.sceneClosed && sceneKey !== "off" && sceneKey !== "" && !closeTimer) { sceneKey = ""; runScene(); }
   };
   OBR.room.onMetadataChange(runScene);

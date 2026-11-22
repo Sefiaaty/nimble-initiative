@@ -7,7 +7,7 @@ import {
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
   clean, tempOf, damage, giveTemp, jumpTo,
   PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, partyOf, partyList, isHero, itemName,
-  SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo,
+  SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY,
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -486,6 +486,7 @@ function renderParty() {
   }).join("");
   return `<div class="ptop">
       <label class="auto"><input type="checkbox" data-act="ptyshow" ${p.show ? "checked" : ""}> Show the party bar to everyone</label>
+      <label class="auto" title="Hides the bar on your screen only, so Owlbear's bottom toolbar is free. Players still see theirs."><input type="checkbox" data-act="ptyhideme" ${barHiddenForMe() ? "checked" : ""}> Hide it on my screen</label>
       <label class="auto">Bar style <select data-act="ptystyle">
         <option value="cards" ${p.style !== "cutouts" ? "selected" : ""}>Portrait cards</option>
         <option value="cutouts" ${p.style === "cutouts" ? "selected" : ""}>Cut-outs (character PNGs, dim until they talk)</option></select></label>
@@ -572,8 +573,15 @@ async function handleParty(act, el) {
   }
 }
 
+function barHiddenForMe() { try { return localStorage.getItem(BAR_HIDDEN_KEY) === "1"; } catch (_) { return false; } }
+
 async function partyField(el) {
   const u = el.dataset.url;
+  if (el.dataset.act === "ptyhideme") {
+    try { localStorage.setItem(BAR_HIDDEN_KEY, el.checked ? "1" : "0"); } catch (_) {}
+    sceneBc.postMessage({ barHidden: el.checked });
+    return;
+  }
   const v = el.type === "checkbox" ? el.checked : el.value.trim();
   await saveParty((p) => {
     if (el.dataset.act === "ptyshow") { p.show = v; return; }

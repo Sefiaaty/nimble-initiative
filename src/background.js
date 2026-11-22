@@ -150,6 +150,12 @@ OBR.onReady(async () => {
 
   // ---- scene backdrop over the whole screen, for everyone (GM can peek behind it) ----
   const SCENE_ID = `${ID}/scene`, PILL_ID = `${ID}/scenepill`;
+  const SCENE_PARTS = [
+    { k: "main", rect: (vw, vh, M) => ({ x: 0, y: 0, w: vw - M, h: vh - M }) },
+    { k: "right", rect: (vw, vh, M) => ({ x: vw - M, y: 0, w: M, h: vh - M }) },
+    { k: "bottom", rect: (vw, vh, M) => ({ x: 0, y: vh - M, w: vw - M, h: M }) },
+    { k: "corner", rect: (vw, vh, M) => ({ x: vw - M, y: vh - M, w: M, h: M }) },
+  ];
   const myRole = await OBR.player.getRole();
   let peek = false;
   try { peek = myRole === "GM" && localStorage.getItem(PEEK_KEY) === "1"; } catch (_) {}
@@ -173,20 +179,32 @@ OBR.onReady(async () => {
       } else await OBR.popover.close(PILL_ID);
       pillOpen = wantPill;
     }
-    const key = sc.on && !(gm && peek) ? "on" : "off";
+    const key = sc.on && !(gm && peek) ? `${vw}x${vh}` : "off";
     if (key === sceneKey) return;
     if (key === "off") {
       if (closeTimer) return;
       // give the page time to fade out before it goes
-      closeTimer = setTimeout(async () => { closeTimer = null; await OBR.modal.close(SCENE_ID).catch(() => {}); sceneKey = "off"; }, sceneKey === "" || peek ? 0 : 900);
+      closeTimer = setTimeout(async () => {
+        closeTimer = null;
+        for (const pt of SCENE_PARTS) await OBR.popover.close(`${SCENE_ID}/${pt.k}`).catch(() => {});
+        sceneKey = "off";
+      }, sceneKey === "" || peek ? 0 : 900);
       return;
     }
     if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
-    // a full-screen modal covers the whole window (popovers stop 16px short of each edge)
-    await OBR.modal.open({
-      id: SCENE_ID, url: new URL("scene.html?mode=full", import.meta.url).href,
-      fullScreen: true, hideBackdrop: true, hidePaper: true,
-    });
+    // Owlbear keeps a popover 32px short of the window's right and bottom edges, so the backdrop is the main
+    // piece plus a right strip, a bottom strip and the corner, each showing its own slice of the same picture.
+    const M = 32;
+    for (const pt of SCENE_PARTS) {
+      const r = pt.rect(vw, vh, M);
+      const q = new URLSearchParams({ mode: "full", part: pt.k, x: r.x, y: r.y, vw, vh });
+      await OBR.popover.open({
+        id: `${SCENE_ID}/${pt.k}`, url: new URL(`scene.html?${q}`, import.meta.url).href, width: r.w, height: r.h,
+        anchorReference: "POSITION", anchorPosition: { left: r.x, top: r.y },
+        anchorOrigin: { horizontal: "LEFT", vertical: "TOP" }, transformOrigin: { horizontal: "LEFT", vertical: "TOP" },
+        hidePaper: true, disableClickAway: true, marginThreshold: 0,
+      });
+    }
     sceneKey = key;
     barRaise = true; runBar(); // keep the party bar on top of the backdrop
   }
@@ -194,7 +212,7 @@ OBR.onReady(async () => {
   const runScene = () => { sceneBusy = sceneBusy.then(syncScene).catch((err) => console.warn("[nimble scene]", err)); };
   bc.onmessage = (e) => {
     if (e.data && "peek" in e.data) { peek = !!e.data.peek; runScene(); }
-    if (e.data && e.data.sceneClosed && sceneKey === "on" && !closeTimer) { sceneKey = ""; runScene(); }
+    if (e.data && e.data.sceneClosed && sceneKey !== "off" && sceneKey !== "" && !closeTimer) { sceneKey = ""; runScene(); }
   };
   OBR.room.onMetadataChange(runScene);
   setInterval(runScene, 2000);

@@ -3,7 +3,11 @@
 import OBR from "@owlbear-rodeo/sdk";
 import { ID, SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo } from "./common.js";
 
-const mode = new URLSearchParams(location.search).get("mode") || "full";
+const qs = new URLSearchParams(location.search);
+const mode = qs.get("mode") || "full";
+const part = qs.get("part") || "main";   // main, right, bottom or corner slice of the backdrop
+const ox = Number(qs.get("x")) || 0, oy = Number(qs.get("y")) || 0;
+const fullW = Number(qs.get("vw")) || 0, fullH = Number(qs.get("vh")) || 0;
 const stage = document.getElementById("stage");
 const cap = document.getElementById("cap");
 const gmBox = document.getElementById("gm");
@@ -59,7 +63,7 @@ function renderFull(md) {
   showCaption(sc);
 }
 function renderGm() {
-  if (role !== "GM") { gmBox.innerHTML = ""; return; }
+  if (role !== "GM" || part !== "main") { gmBox.innerHTML = ""; return; }
   gmBox.innerHTML = `<button data-act="peek" title="Hide the scene for you only, so you can work on the map">👁 Peek</button><button class="end" data-act="end" title="Fade the scene out for everyone">End scene</button>`;
 }
 function renderPill(md) {
@@ -75,13 +79,20 @@ document.addEventListener("click", async (e) => {
   if (b.dataset.act === "end") await endScene();
 });
 
+// every slice lays the picture out at full window size, shifted so its own piece shows
+if (mode === "full" && fullW && fullH) {
+  for (const el of [stage, cap]) Object.assign(el.style, { left: -ox + "px", top: -oy + "px", width: fullW + "px", height: fullH + "px", right: "auto", bottom: "auto" });
+  cap.style.top = (-oy + fullH * 0.22) + "px"; cap.style.height = "auto";
+}
+if (part !== "main") { cap.style.display = "none"; gmBox.style.display = "none"; }
+
 OBR.onReady(async () => {
   role = await OBR.player.getRole();
   document.body.classList.add(mode === "pill" ? "pill" : "full");
   const md = await OBR.room.getMetadata();
   if (mode === "pill") { renderPill(md); OBR.room.onMetadataChange(renderPill); return; }
   // if the backdrop gets closed some other way (Escape), the background reopens it while the scene is on
-  window.addEventListener("pagehide", () => bc.postMessage({ sceneClosed: true }));
+  if (part === "main") window.addEventListener("pagehide", () => bc.postMessage({ sceneClosed: true }));
   renderGm();
   renderFull(md);
   OBR.room.onMetadataChange(renderFull);

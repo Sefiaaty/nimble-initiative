@@ -8,6 +8,7 @@ import {
   clean, tempOf, damage, giveTemp, jumpTo,
   PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, partyOf, partyList, isHero, itemName,
   SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY,
+  CONDITIONS, condDef, DURATIONS, addCond, removeCond, condsOnCombatEnd, condTimer,
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -84,7 +85,7 @@ function render() {
   const a = document.activeElement;
   if (a && app.contains(a) && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && a.type !== "checkbox") { pendingRender = true; return; }
   pendingRender = false;
-  if (!isGM()) { app.innerHTML = `<div class="empty">The GM is running the initiative tracker.</div>`; return; }
+  if (!isGM()) { app.innerHTML = renderPlayer(); return; }
   app.innerHTML = (isGM() ? `<nav class="tabs"><button class="${tab === "init" ? "on" : ""}" data-act="tab" data-t="init">Initiative</button><button class="${tab === "lib" ? "on" : ""}" data-act="tab" data-t="lib">Monster Library</button><button class="${tab === "party" ? "on" : ""}" data-act="tab" data-t="party">Party</button><button class="${tab === "scene" ? "on" : ""}" data-act="tab" data-t="scene">Scene</button></nav>` : "")
     + (tab === "lib" && isGM() ? renderLibrary() : tab === "party" && isGM() ? renderParty() : tab === "scene" && isGM() ? renderScene() : renderInit());
 }
@@ -279,6 +280,7 @@ function row(e) {
       </div>
       ${init}
       ${hpBlock(e)}
+      ${condBlock(e)}
       <div class="line"><div class="pips">${pips}${nactCtl}</div>${move}</div>
       ${assess}
       ${reacts}
@@ -286,6 +288,70 @@ function row(e) {
       ${turnBtn}
     </div>
   </div>`;
+}
+
+// ---- conditions ----
+let cp = null; // the open condition picker: { id, k, name, x, dur, n }
+function condChips(e, removable) {
+  return (e.conds || []).map((c) => {
+    const d = condDef(c.k);
+    const nm = (c.k === "custom" ? c.name : d ? d.name : c.k) + (c.x !== undefined ? ` ${c.x}` : "");
+    const t = condTimer(state, c);
+    const tip = `${nm}: ${d ? d.tip : "Custom condition."}${t ? ` (${t})` : ""}${removable ? "\nClick to remove." : ""}`;
+    const inner = `${esc(nm)}${t ? `<i>${esc(t)}</i>` : ""}`;
+    return removable
+      ? `<button class="cond k-${c.k}" data-act="condrm" data-id="${e.id}" data-cid="${c.cid}" title="${esc(tip)}">${inner}</button>`
+      : `<span class="cond k-${c.k}" title="${esc(tip)}">${inner}</span>`;
+  }).join("");
+}
+function condBlock(e) {
+  const gm = isGM();
+  const chips = condChips(e, gm);
+  const add = gm ? `<button class="addcond" data-act="condopen" data-id="${e.id}" title="Add a condition">+ Condition</button>` : "";
+  if (!chips && !add) return "";
+  return `<div class="conds">${chips}${add}</div>${gm && cp && cp.id === e.id ? condPicker(e) : ""}`;
+}
+function condPicker(e) {
+  const s = state;
+  const d = condDef(cp.k);
+  const act = s.active ? find(s, s.active) : null;
+  const durs = DURATIONS.filter((x) => (x.k !== "endThis" && x.k !== "endSrc") || act);
+  const label = (x) => x.k === "endSrc" ? `Until the end of ${esc(act.name)}'s next turn` : x.k === "endThis" ? `Until the end of this turn (${esc(act.name)})` : x.label;
+  return `<div class="condpick">
+    <div class="cprow"><select data-cp="k">${CONDITIONS.map((c) => `<option value="${c.k}" ${cp.k === c.k ? "selected" : ""}>${c.name}</option>`).join("")}<option value="custom" ${cp.k === "custom" ? "selected" : ""}>Custom…</option></select>
+    ${cp.k === "custom" ? `<input type="text" data-cp="name" maxlength="40" placeholder="Condition name" value="${esc(cp.name || "")}">` : ""}
+    ${d && d.x ? `<input type="number" class="cpx" data-cp="x" placeholder="X" value="${esc(cp.x ?? "")}" title="X">` : ""}</div>
+    <div class="cprow"><select data-cp="dur">${durs.map((x) => `<option value="${x.k}" ${cp.dur === x.k ? "selected" : ""}>${label(x)}</option>`).join("")}</select>
+    ${cp.dur === "rounds" ? `<input type="number" class="cpx" min="1" max="99" data-cp="n" value="${cp.n || 1}" title="Rounds">` : ""}</div>
+    ${d ? `<div class="muted small">${esc(d.tip)}</div>` : ""}
+    <div class="cprow"><button class="primary" data-act="condadd" data-id="${e.id}">Add</button><button data-act="condclose">Cancel</button></div>
+  </div>`;
+}
+
+// ---- players: a view-only list of the heroes ----
+function renderPlayer() {
+  const s = state;
+  const heroes = s.entries.filter((e) => e.kind === "hero");
+  const act = s.active ? find(s, s.active) : null;
+  const phase = !s.started ? "Not in combat" : act ? (act.kind === "hero" ? `Round ${s.round} · ${esc(act.name)}'s turn` : `Round ${s.round} · the enemies are acting`) : `Round ${s.round}`;
+  const head = `<header><div class="title">Nimble Initiative</div><div class="round">${phase}</div></header>`;
+  if (!heroes.length) return head + `<div class="empty">No heroes in the initiative yet.</div>`;
+  const rows = heroes.map((e) => {
+    const active = e.id === s.active, done = s.done.includes(e.id);
+    const pips = e.pips.map((p) => `<span class="pip ${p}" title="${PIP_TIP[p]}"></span>`).join("");
+    const rx = REACTIONS.filter((r) => e.react[r.k]).map((r) => `<span class="rx on" title="${r.name} used this round">${r.label}</span>`).join("");
+    const conds = condChips(e, false);
+    return `<div class="row ro hero ${active ? "active" : ""} ${done ? "done" : ""}">
+      ${e.img ? `<img src="${esc(e.img)}" alt="" onerror="this.style.visibility='hidden'">` : `<div class="noimg"></div>`}
+      <div class="body">
+        <div class="top"><span class="name">${esc(e.name)}</span>${s.started ? `<span class="acted ${done ? "on" : ""}" title="${done ? "Has acted this round" : "Hasn't acted yet"}">${done ? "✓" : "○"}</span>` : ""}${active ? `<span class="badge hero">Acting</span>` : ""}</div>
+        <div class="line"><div class="pips">${pips}</div>${active ? `<span class="muted small">${movesLeft(e)} spaces left</span>` : ""}</div>
+        ${rx ? `<div class="reacts">${rx}</div>` : ""}
+        ${conds ? `<div class="conds">${conds}</div>` : ""}
+      </div></div>`;
+  }).join("");
+  return head + `<div class="list">${rows}</div>
+    <div class="legend"><span class="pip ready"></span>ready <span class="pip spent"></span>spent <span class="pip reaction"></span>reaction <span class="pip locked"></span>not yet</div>`;
 }
 
 function statHtml(m) {
@@ -317,6 +383,18 @@ async function loadStat(e) {
 // ---- actions ----
 async function handle(act, el) {
   const id = el.dataset.id;
+  if (act === "condopen") { cp = cp && cp.id === id ? null : { id, k: "dazed", dur: "endNext", n: 1 }; render(); return; }
+  if (act === "condclose") { cp = null; render(); return; }
+  if (act === "condadd") {
+    if (!cp) return;
+    const d = condDef(cp.k);
+    const name = cp.k === "custom" ? String(cp.name || "").trim() : d.name;
+    if (!name) return;
+    const pick = cp; cp = null;
+    await updateState((s) => { const e = find(s, id); if (!e) return false; addCond(s, e, { k: pick.k, name, x: d && d.x ? pick.x : undefined, dur: pick.dur, n: pick.n }); });
+    return;
+  }
+  if (act === "condrm") { await updateState((s) => { const e = find(s, id); if (!e) return false; removeCond(e, el.dataset.cid); }); return; }
   if (act.startsWith("sc")) return handleScene(act, el);
   if (act === "roll") { await rollDice(el.dataset.n, el.dataset.what); return; }
   if (act === "rollto") { rollTarget = rollTarget === "self" ? "everyone" : "self"; try { localStorage.setItem(ROLL_PREF, rollTarget); } catch (_) {} render(); return; }
@@ -366,6 +444,7 @@ async function handle(act, el) {
       case "stop":
         s.started = false; s.round = 0; s.done = []; s.legQueue = []; s.active = null; s.phase = "pick";
         for (const x of s.entries) { x.pips = isMonsterKind(x.kind) ? freshPips(x.nact) : freshPips(); x.react = {}; x.assessed = []; resetMovement(x); x.init = null; }
+        condsOnCombatEnd(s);
         break;
       case "clear":
         return Object.assign(s, emptyState());
@@ -772,6 +851,7 @@ app.addEventListener("keydown", (ev) => {
 });
 app.addEventListener("input", (ev) => {
   const el = ev.target;
+  if (el.dataset.cp && cp && el.tagName === "INPUT") { cp[el.dataset.cp] = el.value; return; }
   if (el.dataset.act === "scurl" || el.dataset.act === "sctitle" || el.dataset.act === "scsub") {
     const d = sceneDraft || (sceneDraft = { url: "", kind: "", title: "", sub: "" });
     if (el.dataset.act === "scurl") { d.url = el.value.trim(); d.kind = ""; }
@@ -795,6 +875,12 @@ app.addEventListener("input", (ev) => {
 });
 app.addEventListener("change", async (ev) => {
   const el = ev.target;
+  if (el.dataset.cp && cp) {
+    cp[el.dataset.cp] = el.value;
+    if (el.dataset.cp === "k") { const d = condDef(el.value); cp.dur = d ? d.dur || "until" : "until"; }
+    if (el.tagName === "SELECT") render();
+    return;
+  }
   if (el.dataset.act && el.dataset.act.startsWith("pty")) { partyField(el); return; }
   if (el.dataset.act === "assess") {
     const k = el.value;

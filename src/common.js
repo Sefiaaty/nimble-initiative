@@ -174,6 +174,7 @@ export function migrateEntry(e) {
   if (e.maxHp === undefined) e.maxHp = 0;
   if (e.armor === undefined) e.armor = "";
   if (e.color === undefined) e.color = 0;
+  if (!Array.isArray(e.conds)) e.conds = [];
   return e;
 }
 
@@ -244,6 +245,95 @@ export function damage(e, id, n) {
 }
 export function giveTemp(e, id, n) { e.temp[id] = Math.max(tempOf(e, id), n); }
 
+// ---------- conditions (Nimble core rules + glossary), with turn/round timers ----------
+const INCAP = "Incapacitated: can't do anything. Attacks against you have advantage, and melee attacks that hit, crit.";
+export const CONDITIONS = [
+  { k: "blind", name: "Blind", tip: "Can't see. Attacks against you have advantage, and your attacks have disadvantage." },
+  { k: "charged", name: "Charged", dur: "combat", tip: "Some spells and abilities have extra effects when Charged. Gained from lightning damage; lasts 1 minute or until combat ends." },
+  { k: "charmed", name: "Charmed", tip: "Sees the charmer as an ally. The charmer has advantage on social interactions with you." },
+  { k: "conc", name: "Concentrating", tip: "Can only Concentrate on 1 thing at a time. DC 10 STR save when crit, or it breaks." },
+  { k: "dazed", name: "Dazed", dur: "endNext", tip: "Heroes lose 1 action; monsters lose their move OR 1 attack on their next turn." },
+  { k: "deafened", name: "Deafened", tip: "Can't hear." },
+  { k: "distracted", name: "Distracted", tip: "Adjacent to or Taunted by an ally, or can't see you. Does nothing on its own; some abilities have extra effects against it." },
+  { k: "dying", name: "Dying", tip: "At 0 HP. Max 1 action. Taking damage causes 2 Wounds (a crit 3). Attacking causes 1 Wound unless you pass a DC 10 STR save." },
+  { k: "empowered", name: "Empowered", x: true, tip: "Attack damage increased by X." },
+  { k: "frightened", name: "Frightened", tip: "Disadvantage on rolls when the source of fear is near; Speed halved when moving closer to it." },
+  { k: "grappled", name: "Grappled", tip: "Held by another creature. Attacks against either of you have advantage." },
+  { k: "guilty", name: "Guilty", tip: "A creature who crits is Guilty. Some abilities have extra effects against it." },
+  { k: "hampered", name: "Hampered", tip: "Actions or movement reduced (Dazed, Grappled/Restrained, Prone, Slowed, in Difficult Terrain). Some abilities have extra effects against it." },
+  { k: "incap", name: "Incapacitated", tip: "Can't do anything. Attacks against you have advantage, and melee attacks that hit, crit." },
+  { k: "invisible", name: "Invisible", tip: "Can't be seen. Your attacks have advantage, and attacks against you have disadvantage." },
+  { k: "paralyzed", name: "Paralyzed", tip: INCAP },
+  { k: "petrified", name: "Petrified", tip: "Incapacitated, and a rock: immune to most damage except large explosions, picks or similar tools." },
+  { k: "poisoned", name: "Poisoned", tip: "Disadvantage on all rolls (typically, healing ends it)." },
+  { k: "prone", name: "Prone", tip: "Movement costs twice as much, and disadvantage on attacks. Melee attacks against you have advantage; ranged have disadvantage. Spend 3 spaces of Speed to stand up." },
+  { k: "restrained", name: "Restrained", tip: "Can't move. Attacks against you have advantage." },
+  { k: "silenced", name: "Silenced", tip: "Can't cast spells or use other abilities that require speaking (e.g. Commander's Orders)." },
+  { k: "slowed", name: "Slowed", dur: "endNext", tip: "Speed halved during your next turn." },
+  { k: "smoldering", name: "Smoldering", tip: "Does nothing on its own. Some spells and abilities have extra effects against Smoldering creatures, ending the condition (e.g. Ignite, Pyroclasm)." },
+  { k: "stunned", name: "Stunned", tip: INCAP },
+  { k: "taunted", name: "Taunted", dur: "endNext", tip: "Disadvantage on attacks except against the most recent taunter." },
+  { k: "unconscious", name: "Unconscious", tip: INCAP },
+  { k: "weakened", name: "Weakened", x: true, tip: "Attack damage decreased by X." },
+];
+export const condDef = (k) => CONDITIONS.find((c) => c.k === k);
+export const DURATIONS = [
+  { k: "endNext", label: "Until the end of its next turn" },
+  { k: "startNext", label: "Until the start of its next turn" },
+  { k: "endThis", label: "Until the end of this turn" },
+  { k: "endSrc", label: "Until the end of the current creature's next turn" },
+  { k: "rounds", label: "For a number of rounds" },
+  { k: "combat", label: "Until combat ends" },
+  { k: "save", label: "Until it saves (remove by hand)" },
+  { k: "until", label: "Until removed" },
+];
+
+// Add a condition. Named conditions don't stack (Nimble): a repeat replaces the old one with the new timer.
+export function addCond(s, e, { k, name, x, dur, n }) {
+  if (!Array.isArray(e.conds)) e.conds = [];
+  const c = { cid: Math.random().toString(36).slice(2, 9), k: k || "custom", name: String(name || "").slice(0, 40), dur: dur || "until", seen: 0, srcSeen: 0 };
+  if (x !== undefined && x !== "" && Number.isFinite(Number(x))) c.x = Number(x);
+  if (dur === "endThis" || dur === "endSrc") {
+    if (!s.active) c.dur = "until";
+    else { c.src = s.active; c.need = dur === "endThis" ? 0 : 1; c.dur = "endSrc"; }
+  }
+  if (dur === "rounds") c.until = Math.max(1, s.round || 1) + Math.max(1, Number(n) || 1);
+  if (c.k !== "custom") e.conds = e.conds.filter((o) => o.k !== c.k);
+  e.conds.push(c);
+}
+export function removeCond(e, cid) { e.conds = (e.conds || []).filter((c) => c.cid !== cid); }
+function condsOnStart(s, e) {
+  if (!e) return;
+  e.conds = (e.conds || []).filter((c) => c.dur !== "startNext");
+  for (const c of e.conds) c.seen = (c.seen || 0) + 1;
+  for (const o of s.entries) for (const c of o.conds || []) if (c.dur === "endSrc" && c.src === e.id) c.srcSeen = (c.srcSeen || 0) + 1;
+}
+function condsOnEnd(s, e) {
+  if (!e) return;
+  e.conds = (e.conds || []).filter((c) => !(c.dur === "endNext" && c.seen >= 1));
+  for (const o of s.entries) o.conds = (o.conds || []).filter((c) => !(c.dur === "endSrc" && c.src === e.id && (c.srcSeen || 0) >= (c.need ?? 1)));
+}
+function condsOnRound(s) {
+  for (const o of s.entries) o.conds = (o.conds || []).filter((c) => !(c.dur === "rounds" && s.round >= c.until));
+}
+// When combat ends, everything with a timer goes; "until removed" and "until it saves" stay.
+export function condsOnCombatEnd(s) {
+  for (const o of s.entries) o.conds = (o.conds || []).filter((c) => c.dur === "until" || c.dur === "save");
+}
+// Short timer text for a condition chip.
+export function condTimer(s, c) {
+  const src = c.src && s.entries.find((x) => x.id === c.src);
+  switch (c.dur) {
+    case "endNext": return c.seen >= 1 ? "ends this turn" : "till end of next turn";
+    case "startNext": return "till its next turn";
+    case "endSrc": return !src ? "" : (c.need === 0 || c.srcSeen >= 1) && s.active === c.src ? `ends with ${src.name}'s turn` : c.need === 0 ? "till end of this turn" : `till end of ${src.name}'s next turn`;
+    case "rounds": return `till round ${c.until}`;
+    case "combat": return "till combat ends";
+    case "save": return "save ends";
+    default: return "";
+  }
+}
+
 // ---------- turn flow ----------
 const legendaries = (s) => s.entries.filter((e) => e.kind === "legendary");
 export const actors = (s) => s.entries.filter((e) => e.kind !== "legendary");
@@ -254,6 +344,7 @@ export function startTurn(s, id) {
   s.active = id;
   s.phase = "turn";
   onTurnStart(e);
+  condsOnStart(s, e);
 }
 
 export function finishTurn(s, id) {
@@ -261,10 +352,12 @@ export function finishTurn(s, id) {
   if (!e) return false;
   if (s.phase === "legendary") {
     onTurnEnd(e);
+    condsOnEnd(s, e);
     s.legQueue = s.legQueue.filter((x) => x !== id);
     if (s.legQueue.length) {
       s.active = s.legQueue[0];
       onTurnStart(s.entries.find((x) => x.id === s.active));
+      condsOnStart(s, s.entries.find((x) => x.id === s.active));
     } else {
       s.active = null; s.phase = "pick";
       startPending(s);
@@ -272,6 +365,7 @@ export function finishTurn(s, id) {
     return;
   }
   onTurnEnd(e);
+  condsOnEnd(s, e);
   if (!s.done.includes(id)) s.done.push(id);
   const legs = legendaries(s);
   if (e.kind === "hero" && legs.length) {
@@ -279,6 +373,7 @@ export function finishTurn(s, id) {
     s.legQueue = legs.map((x) => x.id);
     s.active = s.legQueue[0];
     onTurnStart(legs[0]);
+    condsOnStart(s, legs[0]);
   } else {
     s.active = null; s.phase = "pick";
     startPending(s);
@@ -313,6 +408,7 @@ export function newRound(s) {
   s.done = [];
   s.active = null;
   s.phase = "pick";
+  condsOnRound(s);
 }
 
 // ---------- reactions: each costs 1 action from the next turn and is 1/round ----------

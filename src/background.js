@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
-import OBR, { buildCurve } from "@owlbear-rodeo/sdk";
+import OBR, { buildCurve, buildImage, buildLabel } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -110,6 +110,64 @@ OBR.onReady(async () => {
   OBR.scene.onMetadataChange(runActive);
   OBR.scene.onReadyChange(async (ready) => { if (ready) { try { dpi = await OBR.scene.grid.getDpi(); } catch (_) {} } runActive(); });
   (async () => { try { if (await OBR.scene.isReady()) dpi = await OBR.scene.grid.getDpi(); } catch (_) {} runActive(); })();
+
+  // ---- conditions on the map, for everyone (local items): up to 2 as text, 3+ as icons (max 4, then +N) ----
+  const CND = `${ID}-cond-`;
+  let condSig = "";
+  const condName = (c) => (c.k === "custom" ? c.name : (condDef(c.k) || {}).name || c.k) + (c.x !== undefined ? ` ${c.x}` : "");
+  const iconUrl = (k) => new URL(`conds/${condDef(k) ? k : "custom"}.png`, import.meta.url).href;
+  async function drawConds() {
+    if (!(await OBR.scene.isReady())) return;
+    const md = await OBR.scene.getMetadata();
+    const st = md[STATE_KEY];
+    const gm = (await OBR.player.getRole()) === "GM";
+    const wanted = [];
+    for (const e of (st && Array.isArray(st.entries) ? st.entries : [])) {
+      const cs = (e.conds || []).slice().sort((a, b) => COND_ORDER.indexOf(a.k) - COND_ORDER.indexOf(b.k));
+      if (cs.length) for (const tid of e.items) wanted.push({ tid, cs });
+    }
+    const toks = wanted.length ? await OBR.scene.items.getItems(wanted.map((w) => w.tid)) : [];
+    const byId = new Map(toks.map((t) => [t.id, t]));
+    const sig = JSON.stringify([gm, dpi, wanted.map((w) => { const t = byId.get(w.tid); return [w.tid, w.cs.map(condName), t ? [Math.round(radius(t)), t.visible !== false] : 0]; })]);
+    if (sig === condSig) return;
+    condSig = sig;
+    const have = await OBR.scene.local.getItems((i) => i.id.startsWith(CND));
+    if (have.length) await OBR.scene.local.deleteItems(have.map((i) => i.id));
+    const add = [];
+    const common = (b, t, name) => b.locked(true).disableHit(true).attachedTo(t.id).disableAttachmentBehavior(["COPY"]).name(name);
+    for (const w of wanted) {
+      const t = byId.get(w.tid);
+      if (!t || (!gm && t.visible === false)) continue;
+      const r = radius(t), c0 = center(t);
+      if (w.cs.length <= 2) {
+        add.push(common(buildLabel().id(`${CND}${t.id}-txt`).plainText(w.cs.map(condName).join(" · "))
+          .position({ x: c0.x, y: c0.y - r * 1.02 }).pointerDirection("DOWN").pointerHeight(Math.max(4, r * 0.07)).pointerWidth(Math.max(6, r * 0.12))
+          .fontSize(Math.max(12, r * 0.22)).fontWeight(700).fillColor("#ffffff").backgroundColor("#1e2231").backgroundOpacity(0.9)
+          .cornerRadius(Math.max(6, r * 0.12)).padding(Math.max(4, r * 0.07)).layer("TEXT"), t, "Conditions").build());
+        continue;
+      }
+      const shown = w.cs.slice(0, 4), extra = w.cs.length - shown.length;
+      const size = r * 0.5, gap = size * 0.08, n = shown.length + (extra ? 1 : 0);
+      let x = c0.x - (n * size + (n - 1) * gap) / 2 + size / 2;
+      const y = c0.y - r - size * 0.3;
+      for (const c of shown) {
+        add.push(common(buildImage({ url: iconUrl(c.k), mime: "image/png", width: 96, height: 96 }, { dpi: (96 * dpi) / size, offset: { x: 48, y: 48 } })
+          .id(`${CND}${t.id}-${c.cid}`).position({ x, y }).layer("ATTACHMENT"), t, condName(c)).build());
+        x += size + gap;
+      }
+      if (extra) add.push(common(buildLabel().id(`${CND}${t.id}-more`).plainText(`+${extra}`).position({ x, y: y + size * 0.32 })
+        .pointerDirection("DOWN").pointerHeight(0).pointerWidth(0).fontSize(Math.max(12, size * 0.42)).fontWeight(800).fillColor("#ffffff")
+        .backgroundColor("#1e2231").backgroundOpacity(0.9).cornerRadius(size * 0.3).padding(Math.max(3, size * 0.1)).layer("TEXT"), t, "More conditions").build());
+    }
+    if (add.length) await OBR.scene.local.addItems(add);
+  }
+  let condBusy = Promise.resolve(), condTimer = null;
+  const runConds = () => { condBusy = condBusy.then(drawConds).catch((err) => console.warn("[nimble conds]", err)); };
+  const soonConds = () => { clearTimeout(condTimer); condTimer = setTimeout(runConds, 250); };
+  OBR.scene.onMetadataChange(runConds);
+  OBR.scene.items.onChange(soonConds);
+  OBR.scene.onReadyChange((ready) => { condSig = ""; if (ready) runConds(); });
+  runConds();
 
   // ---- party bar along the bottom of the screen, for everyone ----
   const BAR_ID = `${ID}/bar`;

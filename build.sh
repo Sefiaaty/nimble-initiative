@@ -6,6 +6,7 @@ rm -rf docs && mkdir docs
 npx esbuild src/background.js src/popover.js src/bar.js src/mic.js src/scene.js --bundle --format=esm --minify --outdir=docs --log-level=warning
 cp public/*.html public/*.css public/*.svg docs/
 mkdir -p docs/portraits && cp public/portraits/* docs/portraits/ 2>/dev/null || true
+mkdir -p docs/conds && cp public/conds/* docs/conds/
 sed "s#\"/#\"$BASE/#g" public/manifest.json > docs/manifest.json
 touch docs/.nojekyll
 # Cache-bust: point the pages at this build's files, so a refresh never mixes old and new code.

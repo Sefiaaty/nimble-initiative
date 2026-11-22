@@ -8,7 +8,7 @@ import {
   clean, tempOf, damage, giveTemp, jumpTo,
   PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, partyOf, partyList, isHero, itemName,
   SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY,
-  CONDITIONS, condDef, DURATIONS, addCond, removeCond, condsOnCombatEnd, condTimer,
+  CONDITIONS, condDef, DURATIONS, addCond, removeCond, condsOnCombatEnd, condTimer, setUses, resetUses, COND_ORDER,
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -281,6 +281,7 @@ function row(e) {
       ${init}
       ${hpBlock(e)}
       ${condBlock(e)}
+      ${usesBlock(e)}
       <div class="line"><div class="pips">${pips}${nactCtl}</div>${move}</div>
       ${assess}
       ${reacts}
@@ -298,7 +299,7 @@ function condChips(e, removable) {
     const nm = (c.k === "custom" ? c.name : d ? d.name : c.k) + (c.x !== undefined ? ` ${c.x}` : "");
     const t = condTimer(state, c);
     const tip = `${nm}: ${d ? d.tip : "Custom condition."}${t ? ` (${t})` : ""}${removable ? "\nClick to remove." : ""}`;
-    const inner = `${esc(nm)}${t ? `<i>${esc(t)}</i>` : ""}`;
+    const inner = `<img class="ci" src="conds/${d ? c.k : "custom"}.png" alt=""><span>${esc(nm)}${t ? `<i>${esc(t)}</i>` : ""}</span>`;
     return removable
       ? `<button class="cond k-${c.k}" data-act="condrm" data-id="${e.id}" data-cid="${c.cid}" title="${esc(tip)}">${inner}</button>`
       : `<span class="cond k-${c.k}" title="${esc(tip)}">${inner}</span>`;
@@ -328,6 +329,32 @@ function condPicker(e) {
   </div>`;
 }
 
+// ---- limited-use monster abilities (1/turn, 1/round, 1/encounter, 1/day...) ----
+const PER_LABEL = { turn: "turn", round: "round", encounter: "encounter", day: "day", "safe rest": "Safe Rest", "field rest": "Field Rest", rest: "rest" };
+function usesBlock(e) {
+  if (!isGM() || !(e.uses || []).length) return "";
+  return `<div class="uses">${e.uses.map((u, i) => `<span class="use ${u.used >= u.max ? "gone" : ""}" title="${esc(u.name)}: ${u.max}/${PER_LABEL[u.per] || u.per}. Click a dot to mark a use${u.per === "day" || u.per.includes("rest") ? ". Resets by hand" : ", resets by itself"}.">
+    ${esc(u.name)} <em>${u.max}/${PER_LABEL[u.per] || u.per}</em>
+    ${Array.from({ length: u.max }, (_, j) => `<button class="upip ${j < u.used ? "spent" : ""}" data-act="use" data-id="${e.id}" data-u="${i}" data-j="${j}"></button>`).join("")}</span>`).join("")}</div>`;
+}
+const usesFilled = new Set();
+async function fillMissingUses() {
+  if (!isGM()) return;
+  const todo = state.entries.filter((e) => e.linked && !Array.isArray(e.uses) && !usesFilled.has(e.id));
+  if (!todo.length) return;
+  todo.forEach((e) => usesFilled.add(e.id));
+  const items = await OBR.scene.items.getItems(todo.map((e) => e.items[0]));
+  const mons = new Map(items.map((it) => [it.id, it.metadata[MON_KEY]]));
+  await updateState((s) => {
+    let touched = false;
+    for (const e of s.entries) {
+      if (!todo.some((x) => x.id === e.id) || Array.isArray(e.uses)) continue;
+      setUses(e, mons.get(e.items[0])); touched = true;
+    }
+    return touched ? s : false;
+  });
+}
+
 // ---- players: a view-only list of the heroes ----
 function renderPlayer() {
   const s = state;
@@ -350,8 +377,14 @@ function renderPlayer() {
         ${conds ? `<div class="conds">${conds}</div>` : ""}
       </div></div>`;
   }).join("");
+  const inPlay = [...new Set(s.entries.flatMap((e) => (e.conds || []).map((c) => (condDef(c.k) ? c.k : "custom:" + c.name))))]
+    .sort((a, b) => COND_ORDER.indexOf(a.split(":")[0]) - COND_ORDER.indexOf(b.split(":")[0]));
+  const legend = inPlay.length ? `<div class="clegend"><div class="muted small">Conditions on the map</div>${inPlay.map((k) => {
+    const d = condDef(k), nm = d ? d.name : k.slice(7);
+    return `<div class="cl"><img src="conds/${d ? k : "custom"}.png" alt=""><span><b>${esc(nm)}</b> ${esc(d ? d.tip : "Custom condition.")}</span></div>`;
+  }).join("")}</div>` : "";
   return head + `<div class="list">${rows}</div>
-    <div class="legend"><span class="pip ready"></span>ready <span class="pip spent"></span>spent <span class="pip reaction"></span>reaction <span class="pip locked"></span>not yet</div>`;
+    <div class="legend"><span class="pip ready"></span>ready <span class="pip spent"></span>spent <span class="pip reaction"></span>reaction <span class="pip locked"></span>not yet</div>${legend}`;
 }
 
 function statHtml(m) {
@@ -392,6 +425,11 @@ async function handle(act, el) {
     if (!name) return;
     const pick = cp; cp = null;
     await updateState((s) => { const e = find(s, id); if (!e) return false; addCond(s, e, { k: pick.k, name, x: d && d.x ? pick.x : undefined, dur: pick.dur, n: pick.n }); });
+    return;
+  }
+  if (act === "use") {
+    const ui = Number(el.dataset.u), j = Number(el.dataset.j);
+    await updateState((s) => { const e = find(s, id); const u = e && e.uses && e.uses[ui]; if (!u) return false; u.used = j < u.used ? j : j + 1; });
     return;
   }
   if (act === "condrm") { await updateState((s) => { const e = find(s, id); if (!e) return false; removeCond(e, el.dataset.cid); }); return; }
@@ -438,13 +476,14 @@ async function handle(act, el) {
       case "start":
         s.started = true; s.round = 1; s.done = []; s.legQueue = []; s.active = null; s.phase = "pick";
         rescaleLegendary(s);
-        for (const x of s.entries) { x.pips = startingPips(x); x.react = {}; x.assessed = []; resetMovement(x); }
+        for (const x of s.entries) { x.pips = startingPips(x); x.react = {}; x.assessed = []; resetMovement(x); resetUses(x, ["turn", "round", "encounter"]); }
         { const n = nextUp(s); if (n) startTurn(s, n.id); }
         break;
       case "stop":
         s.started = false; s.round = 0; s.done = []; s.legQueue = []; s.active = null; s.phase = "pick";
         for (const x of s.entries) { x.pips = isMonsterKind(x.kind) ? freshPips(x.nact) : freshPips(); x.react = {}; x.assessed = []; resetMovement(x); x.init = null; }
         condsOnCombatEnd(s);
+        for (const x of s.entries) resetUses(x, ["turn", "round", "encounter"]);
         break;
       case "clear":
         return Object.assign(s, emptyState());
@@ -1000,12 +1039,14 @@ OBR.onReady(async () => {
     state = migrateState(md[STATE_KEY] ? structuredClone(md[STATE_KEY]) : emptyState());
     render();
     checkOpenRequest();
+    fillMissingUses().catch(() => {});
   };
   OBR.scene.onReadyChange(load);
   OBR.scene.onMetadataChange((md) => {
     state = migrateState(md[STATE_KEY] ? structuredClone(md[STATE_KEY]) : emptyState());
     for (const id of openStat) { const e = find(state, id); if (e && !statCache.has(e.items[0])) loadStat(e); }
     render();
+    fillMissingUses().catch(() => {});
   });
   load();
 });

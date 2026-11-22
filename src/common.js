@@ -143,8 +143,34 @@ export function newEntry({ kind, items, name, img, mon }) {
 }
 
 // Fill an entry from a linked stat block (only the numbers live in the scene; the text stays on the token).
+// Limited-use abilities in a stat block: "(1/encounter)", "2/round", "1/turn", "1/day", "1/Safe Rest".
+const USE_RE = /\b(\d+)\s*\/\s*(turn|round|encounter|combat|day|safe rest|field rest|rest)\b/i;
+export function extractUses(mon) {
+  const list = [];
+  const scan = (arr) => {
+    for (const a of arr || []) {
+      const m = `${a.name || ""} ${a.desc || ""}`.match(USE_RE);
+      if (!m) continue;
+      const per = m[2].toLowerCase() === "combat" ? "encounter" : m[2].toLowerCase();
+      const name = clean(a.name || "").replace(/\s*\(?\b\d+\s*\/\s*(turn|round|encounter|combat|day|safe rest|field rest|rest)\b\)?\.?/i, "").trim() || "Ability";
+      if (!list.some((u) => u.name === name && u.per === per)) list.push({ name, max: Math.max(1, Math.min(9, Number(m[1]))), per, used: 0 });
+    }
+  };
+  if (!mon) return list;
+  scan(mon.abilities); scan(mon.actions);
+  for (const mm of mon.members || []) { scan(mm.abilities); scan(mm.actions); }
+  return list;
+}
+// Refresh uses from a stat block, keeping what was already spent.
+export function setUses(e, mon) {
+  const old = Array.isArray(e.uses) ? e.uses : [];
+  e.uses = extractUses(mon).map((u) => { const o = old.find((x) => x.name === u.name && x.per === u.per); return o ? { ...u, used: Math.min(u.max, o.used) } : u; });
+}
+export function resetUses(e, pers) { for (const u of e.uses || []) if (pers.includes(u.per)) u.used = 0; }
+
 export function applyMonster(e, mon, heroCount = 0) {
   e.linked = true;
+  setUses(e, mon);
   e.armor = mon.armor && mon.armor !== "none" ? mon.armor : "";
   e.speed = mon.speed || 6;
   e.nact = mon.nact || 1;
@@ -277,6 +303,8 @@ export const CONDITIONS = [
   { k: "weakened", name: "Weakened", x: true, tip: "Attack damage decreased by X." },
 ];
 export const condDef = (k) => CONDITIONS.find((c) => c.k === k);
+// What a creature can do comes first; setup markers last.
+export const COND_ORDER = ["incap", "paralyzed", "stunned", "unconscious", "petrified", "dying", "restrained", "grappled", "dazed", "prone", "frightened", "blind", "charmed", "silenced", "taunted", "slowed", "poisoned", "invisible", "deafened", "empowered", "weakened", "hampered", "conc", "charged", "distracted", "smoldering", "guilty", "custom"];
 export const DURATIONS = [
   { k: "endNext", label: "Until the end of its next turn" },
   { k: "startNext", label: "Until the start of its next turn" },
@@ -345,6 +373,7 @@ export function startTurn(s, id) {
   s.phase = "turn";
   onTurnStart(e);
   condsOnStart(s, e);
+  resetUses(e, ["turn"]);
 }
 
 export function finishTurn(s, id) {
@@ -409,6 +438,7 @@ export function newRound(s) {
   s.active = null;
   s.phase = "pick";
   condsOnRound(s);
+  for (const o of s.entries) resetUses(o, ["round"]);
 }
 
 // ---------- reactions: each costs 1 action from the next turn and is 1/round ----------

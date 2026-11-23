@@ -23,7 +23,7 @@ export const isVideo = (url, kind) => kind === "video" || /\.(mp4|webm|mov|m4v)(
 export const CLASSES = ["Berserker", "Commander", "Hunter", "Mage", "Oathsworn", "Shadowmancer", "Shepherd", "Songweaver", "Stormshifter", "The Cheat", "Zephyr"];
 export function partyOf(md) {
   const p = (md && md[PARTY_KEY]) || {};
-  return { show: p.show !== false, style: p.style === "cutouts" ? "cutouts" : "cards", offset: Number.isFinite(Number(p.offset)) ? Number(p.offset) : 0, size: Number.isFinite(Number(p.size)) ? Number(p.size) : 150, gap: Number.isFinite(Number(p.gap)) ? Number(p.gap) : 12, members: p.members || {}, order: Array.isArray(p.order) ? p.order : [] };
+  return { show: p.show !== false, style: p.style === "cutouts" ? "cutouts" : "cards", bird: p.bird !== false, offset: Number.isFinite(Number(p.offset)) ? Number(p.offset) : 0, size: Number.isFinite(Number(p.size)) ? Number(p.size) : 150, gap: Number.isFinite(Number(p.gap)) ? Number(p.gap) : 12, members: p.members || {}, order: Array.isArray(p.order) ? p.order : [] };
 }
 // Card widths for the bar: overall size, spacing and each hero's own size, shrunk to fit the screen.
 export function barLayout(md, vw) {

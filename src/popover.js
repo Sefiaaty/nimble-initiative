@@ -639,6 +639,7 @@ function renderParty() {
   }).join("");
   return `<div class="ptop">
       <label class="auto"><input type="checkbox" data-act="ptyshow" ${p.show ? "checked" : ""}> Show the party bar to everyone</label>
+      <label class="auto" title="Your bird in the bottom-right corner: its speech bubble shows whenever you talk (turn on its 🎙 by hovering it)"><input type="checkbox" data-act="ptybird" ${p.bird ? "checked" : ""}> Show the GM bird</label>
       <label class="auto" title="Hides the bar on your screen only, so Owlbear's bottom toolbar is free. Players still see theirs."><input type="checkbox" data-act="ptyhideme" ${barHiddenForMe() ? "checked" : ""}> Hide it on my screen</label>
       <label class="auto">Bar style <select data-act="ptystyle">
         <option value="cards" ${p.style !== "cutouts" ? "selected" : ""}>Portrait cards</option>
@@ -730,6 +731,7 @@ function barHiddenForMe() { try { return localStorage.getItem(BAR_HIDDEN_KEY) ==
 
 async function partyField(el) {
   const u = el.dataset.url;
+  if (el.dataset.act === "ptybird") { await saveParty((p) => { p.bird = el.checked; }); return; }
   if (el.dataset.act === "ptyhideme") {
     try { localStorage.setItem(BAR_HIDDEN_KEY, el.checked ? "1" : "0"); } catch (_) {}
     sceneBc.postMessage({ barHidden: el.checked });

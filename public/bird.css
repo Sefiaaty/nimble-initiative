@@ -1,0 +1,16 @@
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:system-ui,sans-serif}
+#wrap{position:relative;width:100%;height:100%}
+#bird{position:absolute;right:6px;bottom:4px;width:140px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35));transform-origin:20% 90%}
+body.talk #bird{animation:chirp .5s ease-in-out infinite alternate}
+@keyframes chirp{from{transform:rotate(0deg)}to{transform:rotate(-3deg) translateY(-1px)}}
+#bubble{position:absolute;left:10px;top:34px;width:100px;height:80px;overflow:visible;opacity:0;transform:scale(.4);transform-origin:76% 92%;transition:opacity .18s ease,transform .22s cubic-bezier(.3,1.6,.6,1);filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
+body.talk #bubble{opacity:1;transform:scale(1)}
+#bubble .b{fill:#e8dca8;stroke:#2a1d1a;stroke-width:4;stroke-linejoin:round}
+#bubble .sq{fill:none;stroke:#2a1d1a;stroke-width:3.2;stroke-linecap:round;stroke-dasharray:80;stroke-dashoffset:0}
+body.talk #bubble .s1{animation:wig 0.9s linear infinite}
+body.talk #bubble .s2{animation:wig 1.1s linear infinite reverse}
+@keyframes wig{0%{transform:translateX(0)}50%{transform:translateX(1.5px) translateY(-.6px)}100%{transform:translateX(0)}}
+#mic{position:absolute;right:4px;top:30px;display:none;font-size:14px;line-height:1;padding:4px 6px;border-radius:9px;border:0;cursor:pointer;background:rgba(30,34,49,.85);color:#fff;opacity:.25;transition:opacity .2s}
+body.gm #mic{display:block}
+body.gm:hover #mic,#mic.on{opacity:1}
+#mic.on{background:#2e7d32}

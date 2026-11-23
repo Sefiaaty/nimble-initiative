@@ -208,6 +208,32 @@ OBR.onReady(async () => {
   setInterval(runBar, 2000); // follows window resizes
   runBar();
 
+  // ---- the GM's bird in the bottom-right corner, for everyone ----
+  const BIRD_ID = `${ID}/gmbird`;
+  let birdKey = "", birdRaise = false;
+  async function syncBird() {
+    const md = await OBR.room.getMetadata();
+    const show = partyOf(md).bird;
+    const vw = await OBR.viewport.getWidth();
+    const vh = await OBR.viewport.getHeight();
+    const key = show ? `${vw}x${vh}` : "off";
+    if (key === birdKey && !birdRaise) return;
+    if (!show) { await OBR.popover.close(BIRD_ID); birdKey = key; birdRaise = false; return; }
+    if (birdRaise) { birdRaise = false; await OBR.popover.close(BIRD_ID); }
+    await OBR.popover.open({
+      id: BIRD_ID, url: new URL("bird.html", import.meta.url).href, width: 230, height: 200,
+      anchorReference: "POSITION", anchorPosition: { left: vw - 26, top: vh - 70 },
+      anchorOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" }, transformOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
+      hidePaper: true, disableClickAway: true, marginThreshold: 0,
+    });
+    birdKey = key;
+  }
+  let birdBusy = Promise.resolve();
+  const runBird = () => { birdBusy = birdBusy.then(syncBird).catch((err) => console.warn("[nimble bird]", err)); };
+  OBR.room.onMetadataChange(runBird);
+  setInterval(runBird, 2000);
+  runBird();
+
   // ---- scene backdrop over the whole screen, for everyone (GM can peek behind it) ----
   const SCENE_ID = `${ID}/scene`, PILL_ID = `${ID}/scenepill`;
   const SCENE_PARTS = [
@@ -267,6 +293,7 @@ OBR.onReady(async () => {
     }
     sceneKey = key;
     barRaise = true; runBar(); // keep the party bar on top of the backdrop
+    birdRaise = true; runBird();
   }
   let sceneBusy = Promise.resolve();
   const runScene = () => { sceneBusy = sceneBusy.then(syncScene).catch((err) => console.warn("[nimble scene]", err)); };

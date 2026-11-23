@@ -1,6 +1,6 @@
 // Settings for the selected light(s), shown inside the right-click menu (GM only).
 import OBR from "@owlbear-rodeo/sdk";
-import { LIGHT_KEY, LIGHT_PRESETS, CARRY_KINDS, lightPreset, lightOf } from "./common.js";
+import { LIGHT_KEY, LIGHT_PRESETS, CARRY_KINDS, CARRY_LAST_KEY, lightPreset, lightOf } from "./common.js";
 
 const app = document.getElementById("app");
 const carry = new URLSearchParams(location.search).has("carry"); // a token carrying a light, not a GM marker
@@ -56,6 +56,7 @@ app.addEventListener("click", (e) => {
   if (!b) return;
   if (!b.dataset.kind) { cur = null; render(); save({ k: "" }, true); return; }
   const p = lightPreset(b.dataset.kind);
+  if (carry) try { localStorage.setItem(CARRY_LAST_KEY, p.k); } catch (_) {}
   cur = { k: p.k, color: p.color, r: p.r, power: p.power, flame: p.flame, pulse: p.pulse, on: cur ? cur.on : true };
   render();
   save({ k: p.k, on: cur.on }, true);

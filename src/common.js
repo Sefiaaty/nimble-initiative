@@ -84,6 +84,7 @@ export const LIGHT_PRESETS = [
 ];
 // what a hero can carry (right-click their token)
 export const CARRY_KINDS = ["torch", "lantern", "candle", "spell", "fireball"];
+export const CARRY_LAST_KEY = `${ID}/carryLast`; // the last kind someone picked, for the hotkey
 // a light on its own (a GM marker) rather than on a token
 export const isLightMarker = (item) => item.type === "SHAPE" || !!(item.metadata && item.metadata[LIGHT_KEY] && item.metadata[LIGHT_KEY].marker);
 export const lightPreset = (k) => LIGHT_PRESETS.find((p) => p.k === k) || LIGHT_PRESETS[0];

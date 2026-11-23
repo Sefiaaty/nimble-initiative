@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve, buildEffect, buildImage, buildLabel, buildShape } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, isLightMarker, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, isLightMarker, CARRY_KINDS, CARRY_LAST_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -275,6 +275,30 @@ ${sum}  L *= glow;
     id: `${ID}/carry-menu`,
     icons: [{ icon: lightIcon("torch"), label: "Carry a light", filter: { max: 1, every: [CHAR] } }],
     embed: { url: new URL("light.html?carry=1", import.meta.url).href, height: 184 },
+  });
+  // Shift+L: light up the selected token(s) with the last kind picked, or put the light out
+  const HAS_LIT = { key: ["metadata", LIGHT_KEY, "on"], value: false, operator: "!=" };
+  const HAS_LIGHT = { key: ["metadata", LIGHT_KEY], value: undefined, operator: "!=" };
+  await OBR.contextMenu.create({
+    id: `${ID}/carry-toggle`,
+    shortcut: "Shift+L",
+    icons: [
+      { icon: lightIcon("all-off"), label: "Put out the light", filter: { every: [CHAR, HAS_LIGHT, HAS_LIT] } },
+      { icon: lightIcon("all-on"), label: "Light up", filter: { every: [CHAR] } },
+    ],
+    async onClick(ctx) {
+      const toks = ctx.items.filter((i) => i.layer === "CHARACTER");
+      const allLit = toks.length && toks.every((t) => lightOf(t) && lightOf(t).on);
+      let last = "torch";
+      try { const v = localStorage.getItem(CARRY_LAST_KEY); if (CARRY_KINDS.includes(v)) last = v; } catch (_) {}
+      await OBR.scene.items.updateItems(toks.map((t) => t.id), (items) => {
+        for (const it of items) {
+          const m = it.metadata[LIGHT_KEY];
+          if (allLit) it.metadata[LIGHT_KEY] = { ...m, on: false };
+          else it.metadata[LIGHT_KEY] = m ? { ...m, on: true } : { k: last };
+        }
+      });
+    },
   });
   } catch (err) { console.warn("[nimble lights]", err); } })();
 

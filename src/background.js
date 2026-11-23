@@ -199,6 +199,35 @@ ${sum}  L *= glow;
   OBR.scene.onReadyChange((ready) => { lookSig = ""; lookN = -1; if (ready) setTimeout(runLook, 300); });
   runLook();
 
+  // ---- a small badge on a token that carries a light, like it is holding the torch (local, for everyone) ----
+  const HELD = `${ID}-held-`;
+  let heldSig = "";
+  async function drawHeld() {
+    if (!(await OBR.scene.isReady())) return;
+    const allOff = !!(await OBR.scene.getMetadata())[LIGHTS_OFF_KEY];
+    const gm = (await OBR.player.getRole()) === "GM";
+    const toks = allOff ? [] : (await OBR.scene.items.getItems((i) => !!(i.metadata && i.metadata[LIGHT_KEY]) && !isLightMarker(i)))
+      .filter((t) => (gm || t.visible !== false) && lightOf(t) && lightOf(t).on);
+    const sig = JSON.stringify([dpi, toks.map((t) => [t.id, lightOf(t).k, Math.round(radius(t))])]);
+    if (sig === heldSig) return;
+    heldSig = sig;
+    const have = await OBR.scene.local.getItems((i) => i.id.startsWith(HELD));
+    if (have.length) await OBR.scene.local.deleteItems(have.map((i) => i.id));
+    const add = toks.map((t) => {
+      const r = radius(t), c0 = center(t), size = r * 0.42, k = lightOf(t).k;
+      return buildImage({ url: new URL(`lights/held-${k}.png`, import.meta.url).href, mime: "image/png", width: 96, height: 96 }, { dpi: (96 * dpi) / size, offset: { x: 48, y: 48 } })
+        .id(`${HELD}${t.id}`).position({ x: c0.x + r * 0.66, y: c0.y + r * 0.62 }).layer("ATTACHMENT")
+        .locked(true).disableHit(true).attachedTo(t.id).disableAttachmentBehavior(["COPY"]).name("Carried light").build();
+    });
+    if (add.length) await OBR.scene.local.addItems(add);
+  }
+  let heldBusy = Promise.resolve(), heldT = 0;
+  const runHeld = () => { heldBusy = heldBusy.then(drawHeld).catch((err) => { heldSig = ""; console.warn("[nimble held]", err); }); };
+  OBR.scene.items.onChange(() => { clearTimeout(heldT); heldT = setTimeout(runHeld, 120); });
+  OBR.scene.onMetadataChange(runHeld);
+  OBR.scene.onReadyChange((ready) => { heldSig = ""; if (ready) setTimeout(runHeld, 300); });
+  runHeld();
+
   // ---- the Lights tool (GM): pick a kind of light in the toolbar, click the map to place it ----
   const lightIcon = (k) => new URL(`lights/${k}.svg`, import.meta.url).href;
   (async () => { try {

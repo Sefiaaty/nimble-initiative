@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
-import OBR, { buildCurve, buildEffect, buildImage, buildLabel } from "@owlbear-rodeo/sdk";
+import OBR, { buildCurve, buildEffect, buildImage, buildLabel, buildShape } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -111,46 +111,117 @@ OBR.onReady(async () => {
   OBR.scene.onReadyChange(async (ready) => { if (ready) { try { dpi = await OBR.scene.grid.getDpi(); } catch (_) {} } runActive(); });
   (async () => { try { if (await OBR.scene.isReady()) dpi = await OBR.scene.grid.getDpi(); } catch (_) {} runActive(); })();
 
-  // ---- time of day: two full-screen effects for everyone (a colour multiply, plus a little desaturation at night) ----
-  // One post-process effect over the whole view: it reads each pixel of the scene (map, tokens, fog),
-  // fades some colour out and multiplies in the light of that time of day.
+  // ---- time of day and lights: one post-process effect over the whole view, for everyone ----
+  // It reads each pixel of the scene (map, tokens, fog), grades it for the time of day, then adds back
+  // light around each lamp. Lights show softly by day and strongly at night.
   const TOD_FX = `${ID}-tod`, TOD_OLD = [`${ID}-tod-tint`, `${ID}-tod-sat`];
-  const TOD_SKSL = `uniform shader scene;
+  const lookSksl = (n) => {
+    let u = "", sum = "";
+    for (let i = 0; i < n; i++) { u += `uniform vec3 lp${i};\nuniform vec3 lc${i};\nuniform vec3 lf${i};\n`; sum += `  L += lamp(coord, lp${i}, lc${i}, lf${i}, t);\n`; }
+    return `uniform shader scene;
 uniform mat3 view;
+uniform float time;
 uniform vec3 tint;
 uniform float amount;
+uniform float glow;
+${u}
+vec3 lamp(vec2 w, vec3 p, vec3 c, vec3 f, float t) {
+  float s = f.z;
+  float flick = 1.0 - f.x * (0.10 + 0.08 * sin(t * 9.1 + s) + 0.06 * sin(t * 15.7 + s * 1.7) + 0.05 * sin(t * 23.3 + s * 2.9) + 0.04 * sin(t * 4.3 + s * 3.1));
+  float pulse = 1.0 - f.y * (0.5 + 0.5 * sin(t * 1.3 + s));
+  float r = p.z * (1.0 + f.x * 0.035 * sin(t * 7.3 + s * 1.3));
+  float a = clamp(1.0 - distance(w, p.xy) / r, 0.0, 1.0);
+  a = a * a * (3.0 - 2.0 * a);
+  return c * (a * a) * flick * pulse;
+}
 half4 main(float2 coord) {
   vec2 uv = (vec3(coord, 1) * view).xy;
   half4 c = scene.eval(uv);
-  half l = dot(c.rgb, half3(0.299, 0.587, 0.114));
-  half3 g = mix(c.rgb, half3(l), half(amount));
-  return half4(g * half3(tint), c.a);
+  float t = mod(time, 3600.0);
+  vec3 g = vec3(c.rgb);
+  float l = dot(g, vec3(0.299, 0.587, 0.114));
+  g = mix(g, vec3(l), amount);
+  vec3 L = vec3(0.0);
+${sum}  L *= glow;
+  vec3 o = g * (tint + L) + L * 0.08 * float(c.a);
+  return half4(half3(o), c.a);
 }`;
-  let todSig = "";
-  async function drawTod() {
+  };
+  let lookSig = "", lookN = -1;
+  async function drawLook() {
     if (!(await OBR.scene.isReady())) return;
     const tod = todOf(await OBR.scene.getMetadata());
-    const sig = tod.on ? String(tod.t) : "off";
-    if (sig === todSig) return; // scene metadata changes every turn; only touch the effect when the time moved
-    todSig = sig;
+    const marks = (await OBR.scene.items.getItems((i) => !!(i.metadata && i.metadata[LIGHT_KEY]))).slice(0, LIGHT_MAX);
+    const lamps = [];
+    const gdpi = dpi || 150;
+    for (const m of marks) {
+      const L = lightOf(m);
+      if (!L || !L.on) continue;
+      const [r, g, b] = hexRgb(L.color);
+      const seed = (parseInt(m.id.replace(/[^0-9a-f]/gi, "").slice(-6), 16) || 7) % 1000 / 31.7;
+      lamps.push({ p: { x: m.position.x, y: m.position.y, z: L.r * gdpi }, c: { x: r * L.power, y: g * L.power, z: b * L.power }, f: { x: L.flame, y: L.pulse, z: seed } });
+    }
+    const look = tod.on ? todLook(tod.t) : { tint: [1, 1, 1], desat: 0, glow: 0.55 };
+    const want = tod.on || lamps.length > 0;
+    const sig = JSON.stringify([want, look, lamps]);
+    if (sig === lookSig) return; // only touch the effect when something changed
+    lookSig = sig;
     const have = await OBR.scene.local.getItems((i) => i.id === TOD_FX || TOD_OLD.includes(i.id));
-    const old = have.filter((i) => i.id !== TOD_FX).map((i) => i.id);
-    if (old.length) await OBR.scene.local.deleteItems(old);
-    const fx = have.find((i) => i.id === TOD_FX);
-    if (!tod.on) { if (fx) await OBR.scene.local.deleteItems([TOD_FX]); return; }
-    const look = todLook(tod.t);
-    const uniforms = [{ name: "tint", value: { x: look.tint[0], y: look.tint[1], z: look.tint[2] } }, { name: "amount", value: look.desat }];
+    let fx = have.find((i) => i.id === TOD_FX);
+    const old = have.filter((i) => i.id !== TOD_FX || (!want) || lamps.length !== lookN).map((i) => i.id);
+    if (old.length) { await OBR.scene.local.deleteItems(old); if (old.includes(TOD_FX)) fx = null; }
+    if (!want) { lookN = -1; return; }
+    const uniforms = [
+      { name: "tint", value: { x: look.tint[0], y: look.tint[1], z: look.tint[2] } },
+      { name: "amount", value: look.desat }, { name: "glow", value: look.glow },
+    ];
+    lamps.forEach((l, i) => uniforms.push({ name: `lp${i}`, value: l.p }, { name: `lc${i}`, value: l.c }, { name: `lf${i}`, value: l.f }));
     if (fx) { await OBR.scene.local.updateItems([TOD_FX], (items) => { for (const it of items) it.uniforms = uniforms; }); return; }
+    lookN = lamps.length;
     await OBR.scene.local.addItems([
-      buildEffect().id(TOD_FX).effectType("VIEWPORT").sksl(TOD_SKSL).uniforms(uniforms)
-        .layer("POST_PROCESS").locked(true).disableHit(true).name("Time of day").build(),
+      buildEffect().id(TOD_FX).effectType("VIEWPORT").sksl(lookSksl(lamps.length)).uniforms(uniforms)
+        .layer("POST_PROCESS").locked(true).disableHit(true).name("Time of day and lights").build(),
     ]);
   }
-  let todBusy = Promise.resolve();
-  const runTod = () => { todBusy = todBusy.then(drawTod).catch((err) => { todSig = ""; console.warn("[nimble tod]", err); }); };
-  OBR.scene.onMetadataChange(runTod);
-  OBR.scene.onReadyChange((ready) => { todSig = ""; if (ready) runTod(); });
-  runTod();
+  let lookBusy = Promise.resolve(), lookT = 0;
+  const runLook = () => { lookBusy = lookBusy.then(drawLook).catch((err) => { lookSig = ""; console.warn("[nimble look]", err); }); };
+  const runLookSoon = () => { clearTimeout(lookT); lookT = setTimeout(runLook, 60); };
+  OBR.scene.onMetadataChange(runLook);
+  OBR.scene.items.onChange(runLookSoon);
+  OBR.scene.onReadyChange((ready) => { lookSig = ""; lookN = -1; if (ready) setTimeout(runLook, 300); });
+  runLook();
+
+  // ---- the Lights tool (GM): pick a kind of light in the toolbar, click the map to place it ----
+  const lightIcon = (k) => new URL(`lights/${k}.svg`, import.meta.url).href;
+  (async () => { try {
+  await OBR.tool.create({
+    id: LIGHT_TOOL,
+    icons: [{ icon: lightIcon("tool"), label: "Lights", filter: { roles: ["GM"] } }],
+    defaultMode: `${LIGHT_TOOL}/torch`,
+  });
+  for (const p of LIGHT_PRESETS) {
+    await OBR.tool.createMode({
+      id: `${LIGHT_TOOL}/${p.k}`,
+      icons: [{ icon: lightIcon(p.k), label: `Place ${p.name.toLowerCase()}`, filter: { activeTools: [LIGHT_TOOL] } }],
+      cursors: [{ cursor: "crosshair" }],
+      async onToolClick(_ctx, ev) {
+        if (ev.target && ev.target.metadata && ev.target.metadata[LIGHT_KEY]) return false; // clicking a light lets you drag it
+        const d = dpi || (await OBR.scene.grid.getDpi());
+        const mark = buildShape().shapeType("CIRCLE").width(d * 0.45).height(d * 0.45)
+          .fillColor(p.color).fillOpacity(0.9).strokeColor("#ffffff").strokeOpacity(0.9).strokeWidth(3)
+          .position(ev.pointerPosition).layer("PROP").visible(false).name(p.name)
+          .metadata({ [LIGHT_KEY]: { k: p.k } }).build();
+        await OBR.scene.items.addItems([mark]);
+        return true;
+      },
+    });
+  }
+  await OBR.contextMenu.create({
+    id: `${ID}/light-menu`,
+    icons: [{ icon: lightIcon("tool"), label: "Light", filter: { roles: ["GM"], every: [{ key: ["metadata", LIGHT_KEY], operator: "!=", value: undefined }] } }],
+    embed: { url: new URL("light.html", import.meta.url).href, height: 184 },
+  });
+  } catch (err) { console.warn("[nimble lights]", err); } })();
 
   // ---- conditions on the map, for everyone (local items): up to 2 as text, 3+ as icons (max 4, then +N) ----
   const CND = `${ID}-cond-`;

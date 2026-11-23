@@ -46,12 +46,12 @@ export const TOD_KEY = `${ID}/tod`;
 export function todOf(md) { const t = (md && md[TOD_KEY]) || {}; return { on: !!t.on, t: Number.isFinite(Number(t.t)) ? Math.max(0, Math.min(1, Number(t.t))) : 0.25 }; }
 // t: 0 morning ... 0.25 noon ... 0.45 afternoon ... 0.62 evening ... 0.78 dusk ... 1 night
 const TOD_STOPS = [
-  { t: 0.0, name: "Morning", tint: [1.0, 0.91, 0.82], desat: 0.0 },
-  { t: 0.25, name: "Noon", tint: [1.0, 1.0, 1.0], desat: 0.0 },
-  { t: 0.45, name: "Afternoon", tint: [1.0, 0.95, 0.86], desat: 0.0 },
-  { t: 0.62, name: "Evening", tint: [1.0, 0.76, 0.52], desat: 0.0 },
-  { t: 0.78, name: "Dusk", tint: [0.66, 0.53, 0.76], desat: 0.15 },
-  { t: 1.0, name: "Night", tint: [0.42, 0.48, 0.72], desat: 0.35 },
+  { t: 0.0, name: "Morning", tint: [1.0, 0.91, 0.82], desat: 0.0, glow: 0.3 },
+  { t: 0.25, name: "Noon", tint: [1.0, 1.0, 1.0], desat: 0.0, glow: 0.2 },
+  { t: 0.45, name: "Afternoon", tint: [1.0, 0.95, 0.86], desat: 0.0, glow: 0.3 },
+  { t: 0.62, name: "Evening", tint: [1.0, 0.76, 0.52], desat: 0.0, glow: 0.6 },
+  { t: 0.78, name: "Dusk", tint: [0.66, 0.53, 0.76], desat: 0.15, glow: 0.85 },
+  { t: 1.0, name: "Night", tint: [0.42, 0.48, 0.72], desat: 0.35, glow: 1.0 },
 ];
 export function todLook(t) {
   let i = 0;
@@ -59,9 +59,41 @@ export function todLook(t) {
   const a = TOD_STOPS[i], b = TOD_STOPS[i + 1];
   const k = Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t)));
   const ease = k * k * (3 - 2 * k);
-  return { tint: a.tint.map((v, j) => v + (b.tint[j] - v) * ease), desat: a.desat + (b.desat - a.desat) * ease, name: (k < 0.5 ? a : b).name };
+  return { tint: a.tint.map((v, j) => v + (b.tint[j] - v) * ease), desat: a.desat + (b.desat - a.desat) * ease, glow: a.glow + (b.glow - a.glow) * ease, name: (k < 0.5 ? a : b).name };
 }
 export const TOD_NAMES = TOD_STOPS.map((x) => ({ t: x.t, name: x.name }));
+
+// ---------- lights: glowing spots on the map (torches, mushrooms, chandeliers...) ----------
+// Each light is a small hidden marker item that the GM can move; everyone draws the glow from it.
+export const LIGHT_KEY = `${ID}/light`;
+export const LIGHT_TOOL = `${ID}/lights`;
+export const LIGHT_MAX = 32;
+// color, size in squares, brightness, flame flicker 0..1, slow pulse 0..1
+export const LIGHT_PRESETS = [
+  { k: "torch", name: "Torch", icon: "torch", color: "#ff9a40", r: 4, power: 1.1, flame: 1, pulse: 0 },
+  { k: "candle", name: "Candle", icon: "candle-light", color: "#ffc070", r: 2, power: 0.8, flame: 0.6, pulse: 0 },
+  { k: "campfire", name: "Campfire", icon: "campfire", color: "#ff7e30", r: 6, power: 1.3, flame: 1, pulse: 0 },
+  { k: "chandelier", name: "Chandelier", icon: "ceiling-light", color: "#ffd28c", r: 7, power: 1.0, flame: 0.25, pulse: 0 },
+  { k: "lantern", name: "Lantern", icon: "lantern-flame", color: "#ffc874", r: 5, power: 1.0, flame: 0.35, pulse: 0 },
+  { k: "mushrooms", name: "Glowing mushrooms", icon: "mushrooms-cluster", color: "#b45cff", r: 3, power: 1.3, flame: 0, pulse: 0.45 },
+  { k: "crystal", name: "Crystals", icon: "crystal-cluster", color: "#5cc8ff", r: 3, power: 1.0, flame: 0, pulse: 0.35 },
+  { k: "lava", name: "Lava", icon: "lava", color: "#ff5a1e", r: 5, power: 1.2, flame: 0.2, pulse: 0.3 },
+];
+export const lightPreset = (k) => LIGHT_PRESETS.find((p) => p.k === k) || LIGHT_PRESETS[0];
+const num = (v, d, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+export function lightOf(item) {
+  const m = item && item.metadata && item.metadata[LIGHT_KEY];
+  if (!m) return null;
+  const p = lightPreset(m.k);
+  return {
+    k: p.k,
+    color: /^#[0-9a-f]{6}$/i.test(m.color || "") ? m.color : p.color,
+    r: num(m.r, p.r, 0.5, 30), power: num(m.power, p.power, 0, 3),
+    flame: num(m.flame, p.flame, 0, 1), pulse: num(m.pulse, p.pulse, 0, 1),
+    on: m.on !== false,
+  };
+}
+export const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 export const isVideo = (url, kind) => kind === "video" || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url || "");
 export const CLASSES = ["Berserker", "Commander", "Hunter", "Mage", "Oathsworn", "Shadowmancer", "Shepherd", "Songweaver", "Stormshifter", "The Cheat", "Zephyr"];
 export function partyOf(md) {

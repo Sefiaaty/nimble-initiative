@@ -171,10 +171,52 @@ OBR.onReady(async () => {
   // light around each lamp. Lights show softly by day and strongly at night.
   const TOD_FX = `${ID}-tod`, TOD_OLD = [`${ID}-tod-tint`, `${ID}-tod-sat`];
   // n lamps, w water shapes. Water bends where the scene is sampled; then the time of day grades it and lamps light it.
-  const lookSksl = (n, w) => {
+  function waterPolygon(it, maxPts) {
+    const r = ((it.rotation || 0) * Math.PI) / 180, cr = Math.cos(r), sr = Math.sin(r);
+    const sx = it.scale?.x || 1, sy = it.scale?.y || 1;
+    let pts = it.points.map((q) => { const x = q.x * sx, y = q.y * sy; return { x: it.position.x + x * cr - y * sr, y: it.position.y + x * sr + y * cr }; });
+    if (pts.length > 2 && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1) pts.pop();
+    // drop corners that barely bend the outline until it fits (Ramer-Douglas-Peucker with a growing tolerance)
+    const rdp = (a, tol) => {
+      if (a.length < 3) return a;
+      const s0 = a[0], s1 = a[a.length - 1];
+      let best = -1, bi = 0;
+      for (let i = 1; i < a.length - 1; i++) {
+        const dx = s1.x - s0.x, dy = s1.y - s0.y, L = Math.hypot(dx, dy) || 1;
+        const d = Math.abs(dy * a[i].x - dx * a[i].y + s1.x * s0.y - s1.y * s0.x) / L;
+        if (d > best) { best = d; bi = i; }
+      }
+      if (best <= tol) return [s0, s1];
+      return [...rdp(a.slice(0, bi + 1), tol).slice(0, -1), ...rdp(a.slice(bi), tol)];
+    };
+    // a closed outline: split it at the corner farthest from the first one and simplify both halves
+    let far = 0, fd = -1;
+    pts.forEach((q, i) => { const d = Math.hypot(q.x - pts[0].x, q.y - pts[0].y); if (d > fd) { fd = d; far = i; } });
+    const ring = (tol) => [...rdp(pts.slice(0, far + 1), tol).slice(0, -1), ...rdp([...pts.slice(far), pts[0]], tol).slice(0, -1)];
+    let tol = 0.5;
+    let out = pts;
+    while (out.length > maxPts && tol < 1e5) { out = ring(tol); tol *= 1.6; }
+    if (out.length < 3) return null;
+    // main direction of the shape, for rivers
+    const cx = out.reduce((a, q) => a + q.x, 0) / out.length, cy = out.reduce((a, q) => a + q.y, 0) / out.length;
+    let xx = 0, yy = 0, xy = 0;
+    for (const q of out) { xx += (q.x - cx) ** 2; yy += (q.y - cy) ** 2; xy += (q.x - cx) * (q.y - cy); }
+    const axis = 0.5 * Math.atan2(2 * xy, xx - yy);
+    return { pts: out.map((q) => ({ x: q.x, y: q.y })), axis };
+  }
+  const lookSksl = (n, wpts) => {
     let u = "", sum = "", wsum = "";
     for (let i = 0; i < n; i++) { u += `uniform vec3 lp${i};\nuniform vec3 lc${i};\nuniform vec3 lf${i};\n`; sum += `  L += lamp(coord, lp${i}, lc${i}, lf${i}, t, I);\n`; }
-    for (let i = 0; i < w; i++) { u += `uniform vec3 wp${i};\nuniform vec3 wh${i};\nuniform vec3 ws${i};\n`; wsum += `  water(coord, wp${i}, wh${i}, ws${i}, t, off, sh);\n`; }
+    wpts.forEach((np, i) => {
+      u += `uniform vec3 wp${i};\nuniform vec3 wh${i};\nuniform vec3 ws${i};\n`;
+      if (!np) { wsum += `  water(coord, wp${i}, ws${i}, shapeMask(coord, wp${i}, wh${i}), t, off, sh);\n`; return; }
+      // a polygon: only what is inside its outline, with a soft edge
+      for (let k = 0; k < np; k++) u += `uniform vec2 wv${i}_${k};\n`;
+      let edges = "";
+      for (let k = 0; k < np; k++) edges += `edge(coord, wv${i}_${k}, wv${i}_${(k + 1) % np}, sg, dd); `;
+      wsum += `  if (all(lessThan(abs(coord - wp${i}.xy), wh${i}.xy + vec2(2.0)))) { float sg = 1.0; float dd = 1e12; ${edges}
+    water(coord, wp${i}, ws${i}, sg < 0.0 ? smoothstep(0.0, wh${i}.z, sqrt(dd)) : 0.0, t, off, sh); }\n`;
+    });
     return `uniform shader scene;
 uniform mat3 view;
 uniform float time;
@@ -196,15 +238,27 @@ vec3 lamp(vec2 w, vec3 p, vec3 c, vec3 f, float t, inout vec3 I) {
   I += mix(vec3(k), c, 0.55) * a;              // what it lights: mostly white, tinted by its colour
   return c * a * (1.0 - smoothstep(0.0, 0.6, d)) ; // the warm haze close to it
 }
-void water(vec2 w, vec3 p, vec3 h, vec3 s, float t, inout vec2 off, inout float sh) {
+float shapeMask(vec2 w, vec3 p, vec3 h) {
   float cr = cos(p.z), sr = sin(p.z);
   vec2 d = w - p.xy;
   vec2 q = vec2(d.x * cr + d.y * sr, -d.x * sr + d.y * cr);
-  float edge = max(18.0, min(h.x, h.y) * 0.25);
-  float m;
-  if (h.z > 0.5) { m = smoothstep(0.0, edge, min(h.x - abs(q.x), h.y - abs(q.y))); }
-  else { m = smoothstep(0.0, edge, (1.0 - length(q / h.xy)) * min(h.x, h.y)); }
+  float e = max(18.0, min(h.x, h.y) * 0.25);
+  if (h.z > 0.5) return smoothstep(0.0, e, min(h.x - abs(q.x), h.y - abs(q.y)));
+  return smoothstep(0.0, e, (1.0 - length(q / h.xy)) * min(h.x, h.y));
+}
+// one side of a polygon: keeps the nearest distance to the outline and flips the sign each time it is crossed
+void edge(vec2 p, vec2 a, vec2 b, inout float sg, inout float dd) {
+  vec2 e = b - a, w = p - a;
+  vec2 q = w - e * clamp(dot(w, e) / max(dot(e, e), 0.0001), 0.0, 1.0);
+  dd = min(dd, dot(q, q));
+  bool c1 = p.y >= a.y, c2 = p.y < b.y, c3 = e.x * w.y > e.y * w.x;
+  if ((c1 && c2 && c3) || (!c1 && !c2 && !c3)) sg = -sg;
+}
+void water(vec2 w, vec3 p, vec3 s, float m, float t, inout vec2 off, inout float sh) {
   if (m <= 0.0) return;
+  float cr = cos(p.z), sr = sin(p.z);
+  vec2 d = w - p.xy;
+  vec2 q = vec2(d.x * cr + d.y * sr, -d.x * sr + d.y * cr);
   float amp = s.x * 4.0, sp = s.y;
   vec2 o;
   if (s.z > 1.5) {          // river: waves travel along the shape
@@ -266,11 +320,22 @@ ${sum}  I *= glow;
     // water: any shape or drawing marked as water (hidden from players on purpose, the ripple is what they see)
     const wItems = (await OBR.scene.items.getItems((i) => !!(i.metadata && i.metadata[WATER_KEY]))).slice(0, WATER_MAX);
     const waters = [];
+    let budget = 192; // corners across all water polygons on the map, to keep the effect quick
     for (const it of wItems) {
       const W = waterOf(it);
       let b;
       try { b = await OBR.scene.items.getItemBounds([it.id]); } catch (_) { continue; }
       if (!b || !b.center) continue;
+      if (it.type === "CURVE" && Array.isArray(it.points) && it.points.length >= 3) {
+        const poly = waterPolygon(it, Math.min(32, Math.max(3, budget)));
+        if (poly) {
+          budget -= poly.pts.length;
+          const kind = W.k === "river" ? 2 : W.k === "sea" ? 1 : 0;
+          const e = Math.max(14, Math.min(b.width, b.height) * 0.08);
+          waters.push({ p: { x: b.center.x, y: b.center.y, z: poly.axis + (W.reverse ? Math.PI : 0) }, h: { x: b.width / 2 + 4, y: b.height / 2 + 4, z: e }, s: { x: W.amp, y: W.speed, z: kind }, v: poly.pts });
+          continue;
+        }
+      }
       const isShape = it.type === "SHAPE" && typeof it.width === "number";
       const sx = Math.abs(it.scale?.x || 1), sy = Math.abs(it.scale?.y || 1);
       const hx = isShape ? (it.width * sx) / 2 : b.width / 2, hy = isShape ? (it.height * sy) / 2 : b.height / 2;
@@ -282,9 +347,10 @@ ${sum}  I *= glow;
     const look = tod.on ? todLook(tod.t) : { tint: [1, 1, 1], desat: 0, glow: 0.55 };
     const want = tod.on || lamps.length > 0 || waters.length > 0 || fxNow.busy;
     const sig = JSON.stringify([want, look, lamps, waters]);
+    const wpts = waters.map((w) => (w.v ? w.v.length : 0));
     if (sig === lookSig) return; // only touch the effect when something changed
     lookSig = sig;
-    const shapeKey = `${lamps.length}/${waters.length}`;
+    const shapeKey = `${lamps.length}/${wpts.join(",")}`;
     const have = await OBR.scene.local.getItems((i) => i.id === TOD_FX || TOD_OLD.includes(i.id));
     let fx = have.find((i) => i.id === TOD_FX);
     const old = have.filter((i) => i.id !== TOD_FX || (!want) || shapeKey !== lookN).map((i) => i.id);
@@ -296,11 +362,14 @@ ${sum}  I *= glow;
       { name: "flash", value: fxNow.flash }, { name: "shake", value: fxNow.shake },
     ];
     lamps.forEach((l, i) => uniforms.push({ name: `lp${i}`, value: l.p }, { name: `lc${i}`, value: l.c }, { name: `lf${i}`, value: l.f }));
-    waters.forEach((w, i) => uniforms.push({ name: `wp${i}`, value: w.p }, { name: `wh${i}`, value: w.h }, { name: `ws${i}`, value: w.s }));
+    waters.forEach((w, i) => {
+      uniforms.push({ name: `wp${i}`, value: w.p }, { name: `wh${i}`, value: w.h }, { name: `ws${i}`, value: w.s });
+      if (w.v) w.v.forEach((pt, k) => uniforms.push({ name: `wv${i}_${k}`, value: pt }));
+    });
     if (fx) { await OBR.scene.local.updateItems([TOD_FX], (items) => { for (const it of items) it.uniforms = uniforms; }); return; }
     lookN = shapeKey;
     await OBR.scene.local.addItems([
-      buildEffect().id(TOD_FX).effectType("VIEWPORT").sksl(lookSksl(lamps.length, waters.length)).uniforms(uniforms)
+      buildEffect().id(TOD_FX).effectType("VIEWPORT").sksl(lookSksl(lamps.length, wpts)).uniforms(uniforms)
         .layer("POST_PROCESS").locked(true).disableHit(true).name("Time of day, lights and water").build(),
     ]);
   }

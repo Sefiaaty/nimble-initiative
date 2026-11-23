@@ -79,7 +79,13 @@ export const LIGHT_PRESETS = [
   { k: "mushrooms", name: "Glowing mushrooms", icon: "mushrooms-cluster", color: "#b45cff", r: 3, power: 1.3, flame: 0, pulse: 0.45 },
   { k: "crystal", name: "Crystals", icon: "crystal-cluster", color: "#5cc8ff", r: 3, power: 1.0, flame: 0, pulse: 0.35 },
   { k: "lava", name: "Lava", icon: "lava", color: "#ff5a1e", r: 5, power: 1.2, flame: 0.2, pulse: 0.3 },
+  { k: "spell", name: "Light spell", icon: "spell", color: "#dfe9ff", r: 4, power: 1.1, flame: 0, pulse: 0.08 },
+  { k: "fireball", name: "Fire in hand", icon: "fireball", color: "#ff6a1a", r: 3, power: 1.3, flame: 0.8, pulse: 0.15 },
 ];
+// what a hero can carry (right-click their token)
+export const CARRY_KINDS = ["torch", "lantern", "candle", "spell", "fireball"];
+// a light on its own (a GM marker) rather than on a token
+export const isLightMarker = (item) => item.type === "SHAPE" || !!(item.metadata && item.metadata[LIGHT_KEY] && item.metadata[LIGHT_KEY].marker);
 export const lightPreset = (k) => LIGHT_PRESETS.find((p) => p.k === k) || LIGHT_PRESETS[0];
 const num = (v, d, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
 export function lightOf(item) {

@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve, buildEffect, buildImage, buildLabel, buildShape } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, isLightMarker, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -156,7 +156,10 @@ ${sum}  L *= glow;
     const tod = todOf(smd);
     const allOff = !!smd[LIGHTS_OFF_KEY];
     syncLightsTool(allOff);
-    const marks = allOff ? [] : (await OBR.scene.items.getItems((i) => !!(i.metadata && i.metadata[LIGHT_KEY]))).slice(0, LIGHT_MAX);
+    const gmView = (await OBR.player.getRole()) === "GM";
+    // markers are always hidden on purpose; a hidden token's light stays hidden from players
+    const marks = allOff ? [] : (await OBR.scene.items.getItems((i) => !!(i.metadata && i.metadata[LIGHT_KEY])))
+      .filter((i) => gmView || i.visible || isLightMarker(i)).slice(0, LIGHT_MAX);
     const lamps = [];
     const gdpi = dpi || 150;
     for (const m of marks) {
@@ -227,7 +230,7 @@ ${sum}  L *= glow;
         const mark = buildShape().shapeType("CIRCLE").width(d * 0.45).height(d * 0.45)
           .fillColor(p.color).fillOpacity(0.9).strokeColor("#ffffff").strokeOpacity(0.9).strokeWidth(3)
           .position(ev.pointerPosition).layer("PROP").visible(false).name(p.name)
-          .metadata({ [LIGHT_KEY]: { k: p.k } }).build();
+          .metadata({ [LIGHT_KEY]: { k: p.k, marker: true } }).build();
         await OBR.scene.items.addItems([mark]);
         return true;
       },
@@ -236,7 +239,13 @@ ${sum}  L *= glow;
   await OBR.contextMenu.create({
     id: `${ID}/light-menu`,
     icons: [{ icon: lightIcon("tool"), label: "Light", filter: { roles: ["GM"], every: [{ key: ["metadata", LIGHT_KEY], operator: "!=", value: undefined }] } }],
-    embed: { url: new URL("light.html", import.meta.url).href, height: 184 },
+    embed: { url: new URL("light.html", import.meta.url).href, height: 212 },
+  });
+  // anyone can give a token a light to carry: a torch, a lantern, a light spell, fire in hand...
+  await OBR.contextMenu.create({
+    id: `${ID}/carry-menu`,
+    icons: [{ icon: lightIcon("torch"), label: "Carry a light", filter: { max: 1, every: [CHAR] } }],
+    embed: { url: new URL("light.html?carry=1", import.meta.url).href, height: 184 },
   });
   } catch (err) { console.warn("[nimble lights]", err); } })();
 

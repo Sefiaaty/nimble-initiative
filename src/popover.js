@@ -6,7 +6,7 @@ import {
   startTurn, finishTurn, nextUp, newRound, actors, toggleReaction, hpOf, isMonsterKind,
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
   clean, tempOf, damage, giveTemp, jumpTo,
-  PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, partyOf, partyList, isHero, itemName,
+  PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, SUBCLASSES, partyOf, partyList, isHero, itemName,
   SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY, directLink, TOD_KEY, todOf, todLook, TOD_NAMES,
   CONDITIONS, condDef, DURATIONS, addCond, removeCond, condsOnCombatEnd, condTimer, setUses, resetUses, COND_ORDER,
 } from "./common.js";
@@ -637,7 +637,7 @@ function renderParty() {
       <div class="pf">
         <input type="text" placeholder="${esc(heroNames.get(u) || "Character name")}" value="${esc(m.name || "")}" data-act="ptyname" data-url="${esc(u)}" title="Character name (blank = token name)">
         <div class="pr2">
-          <select data-act="ptycls" data-url="${esc(u)}" title="Class icon"><option value="">Class…</option>${CLASSES.map((c) => `<option ${m.cls === c ? "selected" : ""}>${c}</option>`).join("")}</select>
+          <select data-act="ptycls" data-url="${esc(u)}" title="Class or subclass icon"><option value="">Class…</option>${CLASSES.map((c) => `<optgroup label="${esc(c)}"><option value="${esc(c)}" ${m.cls === c && !m.sub ? "selected" : ""}>${esc(c)}</option>${(SUBCLASSES[c] || []).map((sc) => `<option value="${esc(c + "/" + sc)}" ${m.cls === c && m.sub === sc ? "selected" : ""}>${esc(sc)}</option>`).join("")}</optgroup>`).join("")}</select>
           <select data-act="ptypid" data-url="${esc(u)}" title="Which player plays this hero (their card lights up when they talk)"><option value="">Player…</option>${players.map((pl) => `<option value="${esc(pl.id)}" ${m.pid === pl.id ? "selected" : ""}>${esc(pl.name)}</option>`).join("")}${m.pid && !players.some((pl) => pl.id === m.pid) ? `<option value="${esc(m.pid)}" selected>${esc(m.pname || "Offline player")}</option>` : ""}</select>
         </div>
         <input type="text" placeholder="${p.style === "cutouts" ? "Cut-out PNG link (transparent background)" : "Portrait image link (optional)"}" value="${esc(m.portrait || "")}" data-act="ptyport" data-url="${esc(u)}">
@@ -758,7 +758,7 @@ async function partyField(el) {
     if (el.dataset.act === "ptystyle") { p.style = v; return; }
     const m = (p.members[u] ||= {});
     if (el.dataset.act === "ptyname") m.name = v;
-    if (el.dataset.act === "ptycls") m.cls = v;
+    if (el.dataset.act === "ptycls") { const [c, sc] = v.split("/"); m.cls = c || ""; m.sub = sc || ""; }
     if (el.dataset.act === "ptyport") m.portrait = directLink(v);
     if (el.dataset.act === "ptypid") { m.pid = v; m.pname = (players.find((pl) => pl.id === v) || {}).name || ""; }
   });

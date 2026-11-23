@@ -104,6 +104,8 @@ export function lightOf(item) {
 export const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 export const isVideo = (url, kind) => kind === "video" || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url || "");
 export const CLASSES = ["Berserker", "Commander", "Hunter", "Mage", "Oathsworn", "Shadowmancer", "Shepherd", "Songweaver", "Stormshifter", "The Cheat", "Zephyr"];
+// core and Kickstarter subclasses, plus the table's own (White Dragon)
+export const SUBCLASSES = {"Berserker":["Red Mist","Mountainheart","Titan's Grip","Burning Rage","Muscle Mage"],"Commander":["Vanguard","Bulwark","Phalanx","Arena","Siege-Breaker","Spellblade"],"Hunter":["Wild Heart","Shadowpath","Pack","Traps","Beastmaster"],"Mage":["Control","Chaos","Wards","Flame","Frost","Surges"],"Oathsworn":["Vengeance","Refuge","Valor","Roaring Thunder","Oathbreaker"],"Shadowmancer":["Red Dragon","White Dragon","Abyssal Depths","Void","Endless Swarm","High Celestial","Reaver"],"Shepherd":["Mercy","Malice","Protection","The Forge"],"Songweaver":["Snark","Courage"],"Stormshifter":["Fang & Claw","Sky & Storm","Cinder & Ash","Venom & Web"],"The Cheat":["Silent Blade","Scoundrel","Serpent","Gambler","Honorseeker"],"Zephyr":["Way of Flame","Way of Pain","Way of Iron","Way of Hurricanes"]};
 export function partyOf(md) {
   const p = (md && md[PARTY_KEY]) || {};
   return { show: p.show !== false, style: p.style === "cutouts" ? "cutouts" : "cards", bird: p.bird !== false, offset: Number.isFinite(Number(p.offset)) ? Number(p.offset) : 0, size: Number.isFinite(Number(p.size)) ? Number(p.size) : 150, gap: Number.isFinite(Number(p.gap)) ? Number(p.gap) : 12, members: p.members || {}, order: Array.isArray(p.order) ? p.order : [] };

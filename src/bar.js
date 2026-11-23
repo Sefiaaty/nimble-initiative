@@ -3,7 +3,7 @@
 // GM: soft pings, nudge a player, quiet meter, "ask next", Inspiration, session recap stats.
 import OBR from "@owlbear-rodeo/sdk";
 import { ID, STATE_KEY, TALK_CH, PARTY_KEY, partyOf, partyList, barLayout, directLink, isHero, getHeroImages, itemName } from "./common.js";
-import { CLASS_ICONS } from "./classIcons.js";
+import { CLASS_ICONS, SUBCLASS_ICONS } from "./classIcons.js";
 
 const EV_CH = `${ID}/party-ev`;     // broadcast: player state heartbeats and one-off events
 const STATS_KEY = `${ID}/talkstats`; // room metadata: session recap (written by the GM's bar)
@@ -132,7 +132,8 @@ function render() {
     const wh = gm && pid && (whispers.get(pid) || []).length;
     const insp = Number(m.insp) || 0;
     const nudgeOn = pid && nudged.has(pid) && now - nudged.get(pid) < 4000;
-    const icon = m.cls && CLASS_ICONS[m.cls] ? `<div class="badge" title="${esc(m.cls)}"><svg viewBox="0 0 512 512">${CLASS_ICONS[m.cls]}</svg></div>` : "";
+    const subIcon = m.cls && m.sub ? SUBCLASS_ICONS[`${m.cls}/${m.sub}`] : null;
+    const icon = subIcon || (m.cls && CLASS_ICONS[m.cls]) ? `<div class="badge" title="${esc(m.sub ? `${m.sub} (${m.cls})` : m.cls)}"><svg viewBox="0 0 512 512">${subIcon || CLASS_ICONS[m.cls]}</svg></div>` : "";
     const tools = mine ? `<div class="tools">
         <button class="${mic.state}" data-act="mic" title="${mic.state === "blocked" ? esc(mic.note) : "Light up my card when I talk"}">🎙</button>
         <button class="${own.hand ? "on" : ""}" data-act="hand" title="Raise / lower your hand">✋</button>

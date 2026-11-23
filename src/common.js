@@ -295,6 +295,7 @@ export const CONDITIONS = [
   { k: "poisoned", name: "Poisoned", tip: "Disadvantage on all rolls (typically, healing ends it)." },
   { k: "prone", name: "Prone", tip: "Movement costs twice as much, and disadvantage on attacks. Melee attacks against you have advantage; ranged have disadvantage. Spend 3 spaces of Speed to stand up." },
   { k: "restrained", name: "Restrained", tip: "Can't move. Attacks against you have advantage." },
+  { k: "riding", name: "Riding", tip: "You move with the creature you're riding; it attacks you with disadvantage, and attacks that miss you strike it." },
   { k: "silenced", name: "Silenced", tip: "Can't cast spells or use other abilities that require speaking (e.g. Commander's Orders)." },
   { k: "slowed", name: "Slowed", dur: "endNext", tip: "Speed halved during your next turn." },
   { k: "smoldering", name: "Smoldering", tip: "Does nothing on its own. Some spells and abilities have extra effects against Smoldering creatures, ending the condition (e.g. Ignite, Pyroclasm)." },
@@ -305,7 +306,7 @@ export const CONDITIONS = [
 ];
 export const condDef = (k) => CONDITIONS.find((c) => c.k === k);
 // What a creature can do comes first; setup markers last.
-export const COND_ORDER = ["incap", "paralyzed", "stunned", "unconscious", "petrified", "dying", "restrained", "grappled", "dazed", "prone", "frightened", "blind", "charmed", "silenced", "taunted", "slowed", "poisoned", "invisible", "deafened", "empowered", "weakened", "hampered", "conc", "charged", "distracted", "smoldering", "guilty", "custom"];
+export const COND_ORDER = ["incap", "paralyzed", "stunned", "unconscious", "petrified", "dying", "restrained", "grappled", "dazed", "prone", "frightened", "blind", "charmed", "silenced", "taunted", "slowed", "poisoned", "invisible", "deafened", "riding", "empowered", "weakened", "hampered", "conc", "charged", "distracted", "smoldering", "guilty", "custom"];
 export const DURATIONS = [
   { k: "endNext", label: "Until the end of its next turn" },
   { k: "startNext", label: "Until the start of its next turn" },

@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve, buildEffect, buildImage, buildLabel, buildShape } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -147,11 +147,16 @@ ${sum}  L *= glow;
   return half4(half3(o), c.a);
 }`;
   };
-  let lookSig = "", lookN = -1;
+  let lookSig = "", lookN = -1, toolOff = null;
+  // the toolbar button shows "all off" or "all on" depending on this map
+  const syncLightsTool = (off) => { if (off === toolOff) return; toolOff = off; OBR.tool.setMetadata(LIGHT_TOOL, { allOff: off }).catch(() => {}); };
   async function drawLook() {
     if (!(await OBR.scene.isReady())) return;
-    const tod = todOf(await OBR.scene.getMetadata());
-    const marks = (await OBR.scene.items.getItems((i) => !!(i.metadata && i.metadata[LIGHT_KEY]))).slice(0, LIGHT_MAX);
+    const smd = await OBR.scene.getMetadata();
+    const tod = todOf(smd);
+    const allOff = !!smd[LIGHTS_OFF_KEY];
+    syncLightsTool(allOff);
+    const marks = allOff ? [] : (await OBR.scene.items.getItems((i) => !!(i.metadata && i.metadata[LIGHT_KEY]))).slice(0, LIGHT_MAX);
     const lamps = [];
     const gdpi = dpi || 150;
     for (const m of marks) {
@@ -198,6 +203,18 @@ ${sum}  L *= glow;
     id: LIGHT_TOOL,
     icons: [{ icon: lightIcon("tool"), label: "Lights", filter: { roles: ["GM"] } }],
     defaultMode: `${LIGHT_TOOL}/torch`,
+    defaultMetadata: { allOff: false },
+  });
+  const allIcon = (off) => ({ icon: lightIcon(off ? "all-on" : "all-off"), label: off ? "Turn all lights back on" : "Turn all lights off",
+    filter: { activeTools: [LIGHT_TOOL], metadata: [{ key: "allOff", value: true, operator: off ? "==" : "!=" }] } });
+  await OBR.tool.createAction({
+    id: `${LIGHT_TOOL}/all`,
+    icons: [allIcon(false), allIcon(true)],
+    async onClick() {
+      const off = !!(await OBR.scene.getMetadata())[LIGHTS_OFF_KEY];
+      await OBR.scene.setMetadata({ [LIGHTS_OFF_KEY]: !off });
+      OBR.notification.show(off ? "Lights back on" : "All lights off on this map");
+    },
   });
   for (const p of LIGHT_PRESETS) {
     await OBR.tool.createMode({

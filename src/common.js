@@ -68,6 +68,7 @@ export const TOD_NAMES = TOD_STOPS.map((x) => ({ t: x.t, name: x.name }));
 export const LIGHT_KEY = `${ID}/light`;
 export const LIGHT_TOOL = `${ID}/lights`;
 export const LIGHT_MAX = 32;
+export const LIGHTS_OFF_KEY = `${ID}/lightsOff`; // per map: every light switched off at once
 // color, size in squares, brightness, flame flicker 0..1, slow pulse 0..1
 export const LIGHT_PRESETS = [
   { k: "torch", name: "Torch", icon: "torch", color: "#ff9a40", r: 4, power: 1.1, flame: 1, pulse: 0 },

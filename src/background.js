@@ -9,6 +9,18 @@ const CHAR = { key: "layer", value: "CHARACTER" };
 const LINK_PREFIX = `${ID}-grp-`;
 
 OBR.onReady(async () => {
+  // Shift+F: turn the selected token(s) to face the other way (mirror left/right)
+  await OBR.contextMenu.create({
+    id: `${ID}/flip`,
+    shortcut: "Shift+F",
+    icons: [{ icon: new URL("flip.svg", import.meta.url).href, label: "Face the other way", filter: { every: [CHAR] } }],
+    async onClick(ctx) {
+      await OBR.scene.items.updateItems(ctx.items.filter((i) => i.layer === "CHARACTER").map((i) => i.id), (items) => {
+        for (const it of items) it.scale = { x: -(it.scale?.x || 1), y: it.scale?.y || 1 };
+      });
+    },
+  });
+
   await OBR.contextMenu.create({
     id: `${ID}/add`,
     icons: [{ icon: new URL("add.svg", import.meta.url).href, label: "Add to Nimble Initiative", filter: { every: [CHAR], roles: ["GM"] } }],
@@ -208,7 +220,8 @@ ${sum}  L *= glow;
     const gm = (await OBR.player.getRole()) === "GM";
     const toks = allOff ? [] : (await OBR.scene.items.getItems((i) => !!(i.metadata && i.metadata[LIGHT_KEY]) && !isLightMarker(i)))
       .filter((t) => (gm || t.visible !== false) && lightOf(t) && lightOf(t).on);
-    const sig = JSON.stringify([dpi, toks.map((t) => [t.id, lightOf(t).k, Math.round(radius(t))])]);
+    const face = (t) => ((t.scale?.x || 1) < 0 ? -1 : 1);
+    const sig = JSON.stringify([dpi, toks.map((t) => [t.id, lightOf(t).k, Math.round(radius(t)), face(t)])]);
     if (sig === heldSig) return;
     heldSig = sig;
     const have = await OBR.scene.local.getItems((i) => i.id.startsWith(HELD));
@@ -216,8 +229,8 @@ ${sum}  L *= glow;
     const add = toks.map((t) => {
       const r = radius(t), c0 = center(t), size = r * 0.42, k = lightOf(t).k;
       return buildImage({ url: new URL(`lights/held-${k}.png`, import.meta.url).href, mime: "image/png", width: 96, height: 96 }, { dpi: (96 * dpi) / size, offset: { x: 48, y: 48 } })
-        .id(`${HELD}${t.id}`).position({ x: c0.x + r * 0.66, y: c0.y + r * 0.62 }).layer("ATTACHMENT")
-        .locked(true).disableHit(true).attachedTo(t.id).disableAttachmentBehavior(["COPY"]).name("Carried light").build();
+        .id(`${HELD}${t.id}`).position({ x: c0.x + r * 0.66 * face(t), y: c0.y + r * 0.62 }).layer("ATTACHMENT")
+        .locked(true).disableHit(true).attachedTo(t.id).disableAttachmentBehavior(["COPY", "SCALE"]).name("Carried light").build();
     });
     if (add.length) await OBR.scene.local.addItems(add);
   }
@@ -319,13 +332,13 @@ ${sum}  L *= glow;
     }
     const toks = wanted.length ? await OBR.scene.items.getItems(wanted.map((w) => w.tid)) : [];
     const byId = new Map(toks.map((t) => [t.id, t]));
-    const sig = JSON.stringify([gm, dpi, wanted.map((w) => { const t = byId.get(w.tid); return [w.tid, w.cs.map(condName), t ? [Math.round(radius(t)), t.visible !== false] : 0]; })]);
+    const sig = JSON.stringify([gm, dpi, wanted.map((w) => { const t = byId.get(w.tid); return [w.tid, w.cs.map(condName), t ? [Math.round(radius(t)), t.visible !== false, Math.sign(t.scale?.x || 1)] : 0]; })]);
     if (sig === condSig) return;
     condSig = sig;
     const have = await OBR.scene.local.getItems((i) => i.id.startsWith(CND));
     if (have.length) await OBR.scene.local.deleteItems(have.map((i) => i.id));
     const add = [];
-    const common = (b, t, name) => b.locked(true).disableHit(true).attachedTo(t.id).disableAttachmentBehavior(["COPY"]).name(name);
+    const common = (b, t, name) => b.locked(true).disableHit(true).attachedTo(t.id).disableAttachmentBehavior(["COPY", "SCALE"]).name(name);
     for (const w of wanted) {
       const t = byId.get(w.tid);
       if (!t || (!gm && t.visible === false)) continue;

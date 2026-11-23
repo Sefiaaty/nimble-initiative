@@ -1,7 +1,7 @@
 // Scene backdrop: a picture or looping video over the whole screen for everyone, with a caption.
 // mode=full is the backdrop itself; mode=pill is the GM's small "scene is live" bar while peeking.
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo } from "./common.js";
+import { ID, SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, todOf, todLook } from "./common.js";
 
 const qs = new URLSearchParams(location.search);
 const mode = qs.get("mode") || "full";
@@ -71,6 +71,14 @@ function renderPill(md) {
   document.body.innerHTML = `<div class="pill"><span>Players see <b>${esc(sc.title || "the scene")}</b></span><button data-act="back">Back to scene</button><button class="end" data-act="end">End scene</button></div>`;
 }
 
+// the time of day of the current map tints the backdrop too, so the scene and the map match
+function applyTod(md) {
+  const tod = todOf(md);
+  const look = tod.on ? todLook(tod.t) : { tint: [1, 1, 1], desat: 0 };
+  stage.style.setProperty("--tod", `rgb(${look.tint.map((v) => Math.round(v * 255)).join(",")})`);
+  stage.style.setProperty("--todsat", String(1 - look.desat));
+}
+
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]");
   if (!b || role !== "GM") return;
@@ -96,5 +104,9 @@ OBR.onReady(async () => {
   renderGm();
   renderFull(md);
   OBR.room.onMetadataChange(renderFull);
+  const todNow = async () => { if (await OBR.scene.isReady()) applyTod(await OBR.scene.getMetadata()); else applyTod({}); };
+  todNow();
+  OBR.scene.onMetadataChange(applyTod);
+  OBR.scene.onReadyChange(todNow);
   OBR.player.onChange((p) => { if (p.role !== role) { role = p.role; renderGm(); } });
 });

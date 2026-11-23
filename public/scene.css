@@ -20,3 +20,6 @@ body.pill{background:transparent}
 .pill{display:flex;align-items:center;gap:8px;justify-content:center;height:100vh;box-sizing:border-box}
 .pill span{font:600 15px "Barlow Condensed",sans-serif;color:#efe6d2;background:rgba(30,34,49,.92);border-radius:10px;padding:5px 10px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
 .pill span b{color:#ffcf4a}
+#stage{--tod:rgb(255,255,255);--todsat:1}
+#stage .layer{filter:saturate(var(--todsat));transition:opacity .9s ease,filter .3s linear}
+#stage::after{content:"";position:absolute;inset:0;background:var(--tod);mix-blend-mode:multiply;pointer-events:none;z-index:5;transition:background .3s linear}

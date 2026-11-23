@@ -112,36 +112,42 @@ OBR.onReady(async () => {
   (async () => { try { if (await OBR.scene.isReady()) dpi = await OBR.scene.grid.getDpi(); } catch (_) {} runActive(); })();
 
   // ---- time of day: two full-screen effects for everyone (a colour multiply, plus a little desaturation at night) ----
-  const TOD_TINT = `${ID}-tod-tint`, TOD_SAT = `${ID}-tod-sat`;
-  const TINT_SKSL = "uniform vec3 tint;\nhalf4 main(float2 coord) { return half4(half3(tint), 1.0); }";
-  const SAT_SKSL = "uniform float amount;\nhalf4 main(float2 coord) { return half4(half3(0.5 * amount), amount); }";
+  // One post-process effect over the whole view: it reads each pixel of the scene (map, tokens, fog),
+  // fades some colour out and multiplies in the light of that time of day.
+  const TOD_FX = `${ID}-tod`, TOD_OLD = [`${ID}-tod-tint`, `${ID}-tod-sat`];
+  const TOD_SKSL = `uniform shader scene;
+uniform mat3 view;
+uniform vec3 tint;
+uniform float amount;
+half4 main(float2 coord) {
+  vec2 uv = (vec3(coord, 1) * view).xy;
+  half4 c = scene.eval(uv);
+  half l = dot(c.rgb, half3(0.299, 0.587, 0.114));
+  half3 g = mix(c.rgb, half3(l), half(amount));
+  return half4(g * half3(tint), c.a);
+}`;
   let todSig = "";
   async function drawTod() {
     if (!(await OBR.scene.isReady())) return;
     const tod = todOf(await OBR.scene.getMetadata());
     const sig = tod.on ? String(tod.t) : "off";
-    if (sig === todSig) return; // scene metadata changes every turn; only touch the effects when the time moved
+    if (sig === todSig) return; // scene metadata changes every turn; only touch the effect when the time moved
     todSig = sig;
-    const have = await OBR.scene.local.getItems((i) => i.id === TOD_TINT || i.id === TOD_SAT);
-    if (!tod.on) { if (have.length) await OBR.scene.local.deleteItems(have.map((i) => i.id)); return; }
+    const have = await OBR.scene.local.getItems((i) => i.id === TOD_FX || TOD_OLD.includes(i.id));
+    const old = have.filter((i) => i.id !== TOD_FX).map((i) => i.id);
+    if (old.length) await OBR.scene.local.deleteItems(old);
+    const fx = have.find((i) => i.id === TOD_FX);
+    if (!tod.on) { if (fx) await OBR.scene.local.deleteItems([TOD_FX]); return; }
     const look = todLook(tod.t);
-    const tint = { x: look.tint[0], y: look.tint[1], z: look.tint[2] };
-    if (have.length === 2) {
-      await OBR.scene.local.updateItems(have.map((i) => i.id), (items) => {
-        for (const it of items) it.uniforms = it.id === TOD_TINT ? [{ name: "tint", value: tint }] : [{ name: "amount", value: look.desat }];
-      });
-      return;
-    }
-    if (have.length) await OBR.scene.local.deleteItems(have.map((i) => i.id));
-    const mk = (id, sksl, uniforms, blend, z) => buildEffect().id(id).effectType("VIEWPORT").sksl(sksl).uniforms(uniforms).blendMode(blend)
-      .layer("POST_PROCESS").zIndex(z).locked(true).disableHit(true).name("Time of day").build();
+    const uniforms = [{ name: "tint", value: { x: look.tint[0], y: look.tint[1], z: look.tint[2] } }, { name: "amount", value: look.desat }];
+    if (fx) { await OBR.scene.local.updateItems([TOD_FX], (items) => { for (const it of items) it.uniforms = uniforms; }); return; }
     await OBR.scene.local.addItems([
-      mk(TOD_SAT, SAT_SKSL, [{ name: "amount", value: look.desat }], "SATURATION", 0),
-      mk(TOD_TINT, TINT_SKSL, [{ name: "tint", value: tint }], "MULTIPLY", 1),
+      buildEffect().id(TOD_FX).effectType("VIEWPORT").sksl(TOD_SKSL).uniforms(uniforms)
+        .layer("POST_PROCESS").locked(true).disableHit(true).name("Time of day").build(),
     ]);
   }
   let todBusy = Promise.resolve();
-  const runTod = () => { todBusy = todBusy.then(drawTod).catch((err) => console.warn("[nimble tod]", err)); };
+  const runTod = () => { todBusy = todBusy.then(drawTod).catch((err) => { todSig = ""; console.warn("[nimble tod]", err); }); };
   OBR.scene.onMetadataChange(runTod);
   OBR.scene.onReadyChange((ready) => { todSig = ""; if (ready) runTod(); });
   runTod();

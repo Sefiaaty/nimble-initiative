@@ -51,7 +51,7 @@ const TOD_STOPS = [
   { t: 0.45, name: "Afternoon", tint: [1.0, 0.95, 0.86], desat: 0.0 },
   { t: 0.62, name: "Evening", tint: [1.0, 0.76, 0.52], desat: 0.0 },
   { t: 0.78, name: "Dusk", tint: [0.66, 0.53, 0.76], desat: 0.15 },
-  { t: 1.0, name: "Night", tint: [0.34, 0.4, 0.64], desat: 0.4 },
+  { t: 1.0, name: "Night", tint: [0.42, 0.48, 0.72], desat: 0.35 },
 ];
 export function todLook(t) {
   let i = 0;

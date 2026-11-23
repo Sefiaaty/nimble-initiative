@@ -45,26 +45,46 @@ async function start() {
   }
   go.hidden = true;
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  const an = ctx.createAnalyser(); an.fftSize = 1024;
-  ctx.createMediaStreamSource(stream).connect(an);
-  const buf = new Float32Array(an.fftSize);
-  let above = 0, below = 0;
+  const src = ctx.createMediaStreamSource(stream);
   status();
-  setInterval(() => {
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
-    an.getFloatTimeDomainData(buf);
-    let sum = 0;
-    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-    const rms = Math.sqrt(sum / buf.length);
+  // Detection runs on the audio thread, not on a timer: browsers slow timers down in windows you
+  // aren't looking at, which made the light stick on or miss you while this window was hidden.
+  // Each block reports its loudness and how much audio it covered, so the timings hold either way.
+  let aboveMs = 0, belowMs = 0, lastUi = 0;
+  const onLevel = (rms, ms) => {
     const level = pct(rms);
-    if (level > thrPct) { above++; below = 0; } else { below++; above = 0; }
+    if (level > thrPct) { aboveMs += ms; belowMs = 0; } else { belowMs += ms; aboveMs = 0; }
     const now = Date.now();
-    if (!on && above >= 3) post(true);
-    else if (on && below >= 14) post(false);
+    if (!on && aboveMs >= 150) post(true);
+    else if (on && belowMs >= 700) post(false);
     else if (on && now - sentAt > 1500) post(true);
-    meter.firstElementChild.style.width = level + "%";
-    meter.classList.toggle("talk", on);
-  }, 50);
+    if (now - lastUi > 60) { lastUi = now; meter.firstElementChild.style.width = level + "%"; meter.classList.toggle("talk", on); }
+  };
+  const worklet = `class L extends AudioWorkletProcessor{constructor(){super();this.s=0;this.n=0}
+    process(i){const c=i[0]&&i[0][0];if(c){for(let k=0;k<c.length;k++)this.s+=c[k]*c[k];this.n+=c.length;
+    if(this.n>=2048){this.port.postMessage([Math.sqrt(this.s/this.n),this.n/sampleRate*1000]);this.s=0;this.n=0}}return true}}
+    registerProcessor("nimble-level",L);`;
+  try {
+    if (!ctx.audioWorklet) throw new Error("no worklet");
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([worklet], { type: "application/javascript" })));
+    const node = new AudioWorkletNode(ctx, "nimble-level");
+    node.port.onmessage = (e) => onLevel(e.data[0], e.data[1]);
+    const mute = ctx.createGain(); mute.gain.value = 0;
+    src.connect(node).connect(mute).connect(ctx.destination);
+  } catch (_) {
+    // older browsers: the audio-thread callback of a ScriptProcessor isn't timer-throttled either
+    const sp = ctx.createScriptProcessor(2048, 1, 1);
+    sp.onaudioprocess = (e) => {
+      const c = e.inputBuffer.getChannelData(0);
+      let sum = 0; for (let k = 0; k < c.length; k++) sum += c[k] * c[k];
+      onLevel(Math.sqrt(sum / c.length), (c.length / ctx.sampleRate) * 1000);
+    };
+    const mute = ctx.createGain(); mute.gain.value = 0;
+    src.connect(sp).connect(mute).connect(ctx.destination);
+  }
+  // keep the audio running if the browser suspends it
+  setInterval(() => { if (ctx.state === "suspended") ctx.resume().catch(() => {}); }, 1000);
+  document.addEventListener("visibilitychange", () => { if (ctx.state === "suspended") ctx.resume().catch(() => {}); });
   setInterval(status, 2000);
 }
 go.addEventListener("click", start);

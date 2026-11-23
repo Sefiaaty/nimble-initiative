@@ -201,6 +201,7 @@ export function migrateEntry(e) {
   if (e.armor === undefined) e.armor = "";
   if (e.color === undefined) e.color = 0;
   if (!Array.isArray(e.conds)) e.conds = [];
+  if (e.kind === "hero") { if (e.wounds === undefined) e.wounds = 0; if (!e.maxWounds) e.maxWounds = 6; }
   return e;
 }
 

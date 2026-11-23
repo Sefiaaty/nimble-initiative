@@ -280,6 +280,7 @@ function row(e) {
       </div>
       ${init}
       ${hpBlock(e)}
+      ${woundsBlock(e)}
       ${condBlock(e)}
       ${usesBlock(e)}
       <div class="line"><div class="pips">${pips}${nactCtl}</div>${move}</div>
@@ -329,6 +330,21 @@ function condPicker(e) {
   </div>`;
 }
 
+// ---- hero Wounds (GM only): dies at the last one ----
+function woundsBlock(e) {
+  if (!isGM() || e.kind !== "hero") return "";
+  const max = e.maxWounds || 6, w = Math.min(e.wounds || 0, max);
+  const pips = Array.from({ length: max }, (_, j) => {
+    const last = j === max - 1;
+    return `<button class="wpip ${j < w ? "on" : ""} ${last ? "skull" : ""}" data-act="wound" data-id="${e.id}" data-j="${j}" title="${last ? `Wound ${max}: the hero dies` : `Wound ${j + 1}`}">${last ? "💀" : ""}</button>`;
+  }).join("");
+  const warn = w >= max ? `<span class="wwarn dead">Dead</span>` : w === max - 1 ? `<span class="wwarn">1 Wound from death</span>` : "";
+  return `<div class="wounds" title="Wounds: ${w} of ${max}. Click a dot to set them; they stay until healed.">
+    <span class="lbl">Wounds</span>${pips}
+    <span class="wmax" title="Most heroes die at 6 Wounds; change it if a class or feature allows more"><button data-act="wmax" data-d="-1" data-id="${e.id}">−</button><button data-act="wmax" data-d="1" data-id="${e.id}">+</button></span>${warn}
+  </div>`;
+}
+
 // ---- limited-use monster abilities (1/turn, 1/round, 1/encounter, 1/day...) ----
 const PER_LABEL = { turn: "turn", round: "round", encounter: "encounter", day: "day", "safe rest": "Safe Rest", "field rest": "Field Rest", rest: "rest" };
 function usesBlock(e) {
@@ -356,6 +372,15 @@ async function fillMissingUses() {
 }
 
 // ---- players: a view-only list of the heroes ----
+let visibleTokens = new Set(); // tokens players can see (hidden monsters stay out of the legend)
+async function refreshVisible(items) {
+  if (isGM()) return;
+  const list = items || await OBR.scene.items.getItems((i) => i.layer === "CHARACTER" || i.layer === "MOUNT" || i.layer === "PROP");
+  const next = new Set(list.filter((i) => i.visible !== false).map((i) => i.id));
+  const changed = next.size !== visibleTokens.size || [...next].some((id) => !visibleTokens.has(id));
+  visibleTokens = next;
+  if (changed) render();
+}
 function renderPlayer() {
   const s = state;
   const heroes = s.entries.filter((e) => e.kind === "hero");
@@ -377,7 +402,8 @@ function renderPlayer() {
         ${conds ? `<div class="conds">${conds}</div>` : ""}
       </div></div>`;
   }).join("");
-  const inPlay = [...new Set(s.entries.flatMap((e) => (e.conds || []).map((c) => (condDef(c.k) ? c.k : "custom:" + c.name))))]
+  const seen = (e) => e.items.some((id) => visibleTokens.has(id));
+  const inPlay = [...new Set(s.entries.filter(seen).flatMap((e) => (e.conds || []).map((c) => (condDef(c.k) ? c.k : "custom:" + c.name))))]
     .sort((a, b) => COND_ORDER.indexOf(a.split(":")[0]) - COND_ORDER.indexOf(b.split(":")[0]));
   const legend = inPlay.length ? `<div class="clegend"><div class="muted small">Conditions on the map</div>${inPlay.map((k) => {
     const d = condDef(k), nm = d ? d.name : k.slice(7);
@@ -425,6 +451,15 @@ async function handle(act, el) {
     if (!name) return;
     const pick = cp; cp = null;
     await updateState((s) => { const e = find(s, id); if (!e) return false; addCond(s, e, { k: pick.k, name, x: d && d.x ? pick.x : undefined, dur: pick.dur, n: pick.n }); });
+    return;
+  }
+  if (act === "wound") {
+    const j = Number(el.dataset.j);
+    await updateState((s) => { const e = find(s, id); if (!e) return false; e.wounds = j < (e.wounds || 0) ? j : j + 1; });
+    return;
+  }
+  if (act === "wmax") {
+    await updateState((s) => { const e = find(s, id); if (!e) return false; e.maxWounds = Math.max(1, Math.min(12, (e.maxWounds || 6) + Number(el.dataset.d))); e.wounds = Math.min(e.wounds || 0, e.maxWounds); });
     return;
   }
   if (act === "use") {
@@ -1040,7 +1075,9 @@ OBR.onReady(async () => {
     render();
     checkOpenRequest();
     fillMissingUses().catch(() => {});
+    refreshVisible().catch(() => {});
   };
+  OBR.scene.items.onChange((items) => { refreshVisible(items).catch(() => {}); });
   OBR.scene.onReadyChange(load);
   OBR.scene.onMetadataChange((md) => {
     state = migrateState(md[STATE_KEY] ? structuredClone(md[STATE_KEY]) : emptyState());

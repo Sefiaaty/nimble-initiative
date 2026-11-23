@@ -7,7 +7,7 @@ import {
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
   clean, tempOf, damage, giveTemp, jumpTo,
   PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, partyOf, partyList, isHero, itemName,
-  SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY, directLink,
+  SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY, directLink, TOD_KEY, todOf, todLook, TOD_NAMES,
   CONDITIONS, condDef, DURATIONS, addCond, removeCond, condsOnCombatEnd, condTimer, setUses, resetUses, COND_ORDER,
 } from "./common.js";
 
@@ -115,7 +115,12 @@ function renderScene() {
   const d = sceneDraft;
   const same = live.on && live.url === d.url && live.title === d.title && live.sub === d.sub;
   const presets = loadPresets();
-  return `<div class="scene">
+  const tod = todOf(sceneMd);
+  const todBox = `<div class="tod"><label class="auto"><input type="checkbox" data-act="todon" ${tod.on ? "checked" : ""}> <b>Time of day</b> on this map</label>
+      <input type="range" min="0" max="1000" step="1" value="${Math.round(tod.t * 1000)}" data-act="todt" ${tod.on ? "" : "disabled"} class="todr">
+      <div class="todl">${TOD_NAMES.map((n) => `<span style="left:${n.t * 100}%">${n.name}</span>`).join("")}</div>
+      <div class="muted small">Tints the map and tokens for everyone. Each map keeps its own time.</div></div>`;
+  return `<div class="scene">${todBox}
     ${live.on ? `<div class="slive"><b>Live:</b> ${esc(live.title || "untitled scene")}
       <button data-act="scpeek" title="Hide the scene for you only, so you can work on the map">${scenePeek ? "Back to scene" : "Peek"}</button>
       <button class="send" data-act="scend" title="Fade the scene out for everyone">End scene</button></div>` : ""}
@@ -290,6 +295,16 @@ function row(e) {
       ${turnBtn}
     </div>
   </div>`;
+}
+
+// ---- time of day (writes are throttled while dragging) ----
+let sceneMd = {};
+const typingInScene = () => { const a = document.activeElement; return tab === "scene" && !!a && a.tagName === "INPUT" && !["checkbox", "radio", "button"].includes(a.type) && app.contains(a); };
+let todPending = null, todTimer = null;
+function queueTod(t) {
+  todPending = t;
+  if (todTimer) return;
+  todTimer = setTimeout(async () => { todTimer = null; const v = todPending; await OBR.scene.setMetadata({ [TOD_KEY]: { on: true, t: v } }).catch(() => {}); }, 90);
 }
 
 // ---- conditions ----
@@ -927,6 +942,7 @@ app.addEventListener("keydown", (ev) => {
 });
 app.addEventListener("input", (ev) => {
   const el = ev.target;
+  if (el.dataset.act === "todt") { queueTod(Number(el.value) / 1000); return; }
   if (el.dataset.cp && cp && el.tagName === "INPUT") { cp[el.dataset.cp] = el.value; return; }
   if (el.dataset.act === "scurl" || el.dataset.act === "sctitle" || el.dataset.act === "scsub") {
     const d = sceneDraft || (sceneDraft = { url: "", kind: "", title: "", sub: "" });
@@ -951,6 +967,7 @@ app.addEventListener("input", (ev) => {
 });
 app.addEventListener("change", async (ev) => {
   const el = ev.target;
+  if (el.dataset.act === "todon") { const t = todOf(sceneMd).t; sceneMd = { ...sceneMd, [TOD_KEY]: { on: el.checked, t } }; render(); await OBR.scene.setMetadata({ [TOD_KEY]: { on: el.checked, t } }); return; }
   if (el.dataset.cp && cp) {
     cp[el.dataset.cp] = el.value;
     if (el.dataset.cp === "k") { const d = condDef(el.value); cp.dur = d ? d.dur || "until" : "until"; }
@@ -1048,7 +1065,7 @@ setInterval(checkOpenRequest, 700); // same-window fallback (the storage event o
 OBR.onReady(async () => {
   role = await OBR.player.getRole();
   roomMd = await OBR.room.getMetadata();
-  OBR.room.onMetadataChange(async (md) => { roomMd = md; if (tab === "party") { await loadHeroNames(); render(); } else if (tab === "scene") render(); });
+  OBR.room.onMetadataChange(async (md) => { roomMd = md; if (tab === "party") { await loadHeroNames(); render(); } else if (tab === "scene" && !typingInScene()) render(); });
   try { players = await OBR.party.getPlayers(); } catch (_) {}
   OBR.party.onChange((pl) => { players = pl; if (tab === "party") render(); });
   applyTheme(await OBR.theme.getTheme());
@@ -1073,6 +1090,7 @@ OBR.onReady(async () => {
       return;
     }
     const md = await OBR.scene.getMetadata();
+    sceneMd = md;
     state = migrateState(md[STATE_KEY] ? structuredClone(md[STATE_KEY]) : emptyState());
     render();
     checkOpenRequest();
@@ -1082,8 +1100,10 @@ OBR.onReady(async () => {
   OBR.scene.items.onChange((items) => { refreshVisible(items).catch(() => {}); });
   OBR.scene.onReadyChange(load);
   OBR.scene.onMetadataChange((md) => {
+    sceneMd = md;
     state = migrateState(md[STATE_KEY] ? structuredClone(md[STATE_KEY]) : emptyState());
     for (const id of openStat) { const e = find(state, id); if (e && !statCache.has(e.items[0])) loadStat(e); }
+    if (typingInScene()) return; // don't rebuild the tab under a dragged slider or a half-typed link
     render();
     fillMissingUses().catch(() => {});
   });

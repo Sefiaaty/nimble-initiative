@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
-import OBR, { buildCurve, buildImage, buildLabel } from "@owlbear-rodeo/sdk";
+import OBR, { buildCurve, buildEffect, buildImage, buildLabel } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER,
+  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -110,6 +110,41 @@ OBR.onReady(async () => {
   OBR.scene.onMetadataChange(runActive);
   OBR.scene.onReadyChange(async (ready) => { if (ready) { try { dpi = await OBR.scene.grid.getDpi(); } catch (_) {} } runActive(); });
   (async () => { try { if (await OBR.scene.isReady()) dpi = await OBR.scene.grid.getDpi(); } catch (_) {} runActive(); })();
+
+  // ---- time of day: two full-screen effects for everyone (a colour multiply, plus a little desaturation at night) ----
+  const TOD_TINT = `${ID}-tod-tint`, TOD_SAT = `${ID}-tod-sat`;
+  const TINT_SKSL = "uniform vec3 tint;\nhalf4 main(float2 coord) { return half4(half3(tint), 1.0); }";
+  const SAT_SKSL = "uniform float amount;\nhalf4 main(float2 coord) { return half4(half3(0.5 * amount), amount); }";
+  let todSig = "";
+  async function drawTod() {
+    if (!(await OBR.scene.isReady())) return;
+    const tod = todOf(await OBR.scene.getMetadata());
+    const sig = tod.on ? String(tod.t) : "off";
+    if (sig === todSig) return; // scene metadata changes every turn; only touch the effects when the time moved
+    todSig = sig;
+    const have = await OBR.scene.local.getItems((i) => i.id === TOD_TINT || i.id === TOD_SAT);
+    if (!tod.on) { if (have.length) await OBR.scene.local.deleteItems(have.map((i) => i.id)); return; }
+    const look = todLook(tod.t);
+    const tint = { x: look.tint[0], y: look.tint[1], z: look.tint[2] };
+    if (have.length === 2) {
+      await OBR.scene.local.updateItems(have.map((i) => i.id), (items) => {
+        for (const it of items) it.uniforms = it.id === TOD_TINT ? [{ name: "tint", value: tint }] : [{ name: "amount", value: look.desat }];
+      });
+      return;
+    }
+    if (have.length) await OBR.scene.local.deleteItems(have.map((i) => i.id));
+    const mk = (id, sksl, uniforms, blend, z) => buildEffect().id(id).effectType("VIEWPORT").sksl(sksl).uniforms(uniforms).blendMode(blend)
+      .layer("POST_PROCESS").zIndex(z).locked(true).disableHit(true).name("Time of day").build();
+    await OBR.scene.local.addItems([
+      mk(TOD_SAT, SAT_SKSL, [{ name: "amount", value: look.desat }], "SATURATION", 0),
+      mk(TOD_TINT, TINT_SKSL, [{ name: "tint", value: tint }], "MULTIPLY", 1),
+    ]);
+  }
+  let todBusy = Promise.resolve();
+  const runTod = () => { todBusy = todBusy.then(drawTod).catch((err) => console.warn("[nimble tod]", err)); };
+  OBR.scene.onMetadataChange(runTod);
+  OBR.scene.onReadyChange((ready) => { todSig = ""; if (ready) runTod(); });
+  runTod();
 
   // ---- conditions on the map, for everyone (local items): up to 2 as text, 3+ as icons (max 4, then +N) ----
   const CND = `${ID}-cond-`;

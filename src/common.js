@@ -41,6 +41,27 @@ export function directLink(url) {
   }
   return raw;
 }
+// ---------- time of day: a colour grade over the whole map (per scene) ----------
+export const TOD_KEY = `${ID}/tod`;
+export function todOf(md) { const t = (md && md[TOD_KEY]) || {}; return { on: !!t.on, t: Number.isFinite(Number(t.t)) ? Math.max(0, Math.min(1, Number(t.t))) : 0.25 }; }
+// t: 0 morning ... 0.25 noon ... 0.45 afternoon ... 0.62 evening ... 0.78 dusk ... 1 night
+const TOD_STOPS = [
+  { t: 0.0, name: "Morning", tint: [1.0, 0.91, 0.82], desat: 0.0 },
+  { t: 0.25, name: "Noon", tint: [1.0, 1.0, 1.0], desat: 0.0 },
+  { t: 0.45, name: "Afternoon", tint: [1.0, 0.95, 0.86], desat: 0.0 },
+  { t: 0.62, name: "Evening", tint: [1.0, 0.76, 0.52], desat: 0.0 },
+  { t: 0.78, name: "Dusk", tint: [0.66, 0.53, 0.76], desat: 0.15 },
+  { t: 1.0, name: "Night", tint: [0.34, 0.4, 0.64], desat: 0.4 },
+];
+export function todLook(t) {
+  let i = 0;
+  while (i < TOD_STOPS.length - 2 && t > TOD_STOPS[i + 1].t) i++;
+  const a = TOD_STOPS[i], b = TOD_STOPS[i + 1];
+  const k = Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t)));
+  const ease = k * k * (3 - 2 * k);
+  return { tint: a.tint.map((v, j) => v + (b.tint[j] - v) * ease), desat: a.desat + (b.desat - a.desat) * ease, name: (k < 0.5 ? a : b).name };
+}
+export const TOD_NAMES = TOD_STOPS.map((x) => ({ t: x.t, name: x.name }));
 export const isVideo = (url, kind) => kind === "video" || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url || "");
 export const CLASSES = ["Berserker", "Commander", "Hunter", "Mage", "Oathsworn", "Shadowmancer", "Shepherd", "Songweaver", "Stormshifter", "The Cheat", "Zephyr"];
 export function partyOf(md) {

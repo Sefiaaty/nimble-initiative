@@ -401,14 +401,26 @@ async function act(a, el) {
   }
 }
 
+// Click a card: the map glides to that hero's token at your current zoom. Your own hero (or any, for the GM) gets selected,
+// so Shift+L and Shift+F work straight away.
+async function findHero(u) {
+  const tok = tokens.get(u);
+  const m = partyOf(roomMd).members[u] || {};
+  if (!tok) { try { await OBR.notification.show(`${m.name || "That hero"} isn't on this map`); } catch (_) {} return; }
+  try {
+    const [b, scale, vw, vh] = await Promise.all([OBR.scene.items.getItemBounds([tok.id]), OBR.viewport.getScale(), OBR.viewport.getWidth(), OBR.viewport.getHeight()]);
+    await OBR.viewport.animateTo({ position: { x: vw / 2 - b.center.x * scale, y: vh / 2 - b.center.y * scale }, scale });
+    if (me.role === "GM" || (m.pid && m.pid === me.id)) await OBR.player.select([tok.id]);
+  } catch (_) {}
+}
+
 document.addEventListener("click", async (e) => {
   ensureAudio(); // any click unlocks sound for this window
   const btn = e.target.closest("[data-act]");
   if (btn && btn.tagName !== "FORM") { e.stopPropagation(); if (!btn.disabled) await act(btn.dataset.act, btn); return; }
   const card = e.target.closest(".card");
   if (!card || card.classList.contains("framing") || dragMoved) return;
-  const tok = tokens.get(card.dataset.url);
-  if (tok) { try { await OBR.viewport.animateToBounds(await OBR.scene.items.getItemBounds([tok.id])); } catch (_) {} }
+  await findHero(card.dataset.url);
 });
 layer.addEventListener("submit", (e) => {
   e.preventDefault();

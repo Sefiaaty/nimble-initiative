@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve, buildEffect, buildImage, buildLabel, buildShape } from "@owlbear-rodeo/sdk";
 import {
-  ID, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, isLightMarker, CARRY_KINDS, CARRY_LAST_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
+  ID, TALK_CH, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, isLightMarker, CARRY_KINDS, CARRY_LAST_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
   getHeroImages, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -118,6 +118,47 @@ OBR.onReady(async () => {
     }
     if (add.length) await OBR.scene.local.addItems(add);
   }
+  // ---- who is talking: a soft blue glow around the speaking player's hero token, for everyone (local items) ----
+  const TALKR = `${ID}-talk-`;
+  const talkingNow = new Map(); // pid -> last heard
+  let talkBusy = Promise.resolve(), talkSig = "";
+  async function drawTalk() {
+    if (!(await OBR.scene.isReady())) return;
+    const now = Date.now();
+    for (const [pid, t] of talkingNow) if (now - t > 2600) talkingNow.delete(pid);
+    let toks = [];
+    if (talkingNow.size) {
+      const members = partyOf(await OBR.room.getMetadata()).members;
+      const urls = new Set(Object.entries(members).filter(([, m]) => m && m.pid && talkingNow.has(m.pid)).map(([u]) => u));
+      const gm = (await OBR.player.getRole()) === "GM";
+      if (urls.size) toks = await OBR.scene.items.getItems((i) => i.layer === "CHARACTER" && i.image && urls.has(i.image.url) && (gm || i.visible !== false));
+    }
+    const sig = JSON.stringify(toks.map((t) => [t.id, Math.round(radius(t))]));
+    if (sig === talkSig) return;
+    talkSig = sig;
+    const have = await OBR.scene.local.getItems((i) => i.id.startsWith(TALKR));
+    if (have.length) await OBR.scene.local.deleteItems(have.map((i) => i.id));
+    const add = [];
+    for (const t of toks) {
+      const r = radius(t);
+      const ring = (id, rr, w, op) => buildCurve().id(id).points(circle(rr, 56)).position(center(t)).strokeColor("#5ab4ff")
+        .strokeOpacity(op).strokeWidth(w).fillOpacity(0).tension(0).closed(true).layer("DRAWING").locked(true)
+        .disableHit(true).name("Talking").attachedTo(t.id).disableAttachmentBehavior(["COPY"]).build();
+      add.push(ring(`${TALKR}glow-${t.id}`, r * 1.24, Math.max(12, r * 0.3), 0.28));
+      add.push(ring(`${TALKR}ring-${t.id}`, r * 1.17, Math.max(4, r * 0.06), 0.9));
+    }
+    if (add.length) await OBR.scene.local.addItems(add);
+  }
+  const runTalk = () => { talkBusy = talkBusy.then(drawTalk).catch((err) => { talkSig = ""; console.warn("[nimble talk]", err); }); };
+  OBR.broadcast.onMessage(TALK_CH, (ev) => {
+    const { pid, on } = ev.data || {};
+    if (!pid) return;
+    if (on) talkingNow.set(pid, Date.now()); else talkingNow.delete(pid);
+    runTalk();
+  });
+  setInterval(() => { if (talkingNow.size) runTalk(); }, 1000); // a dropped "stopped talking" message still clears
+  OBR.scene.onReadyChange(() => { talkSig = ""; });
+
   const runActive = () => { actBusy = actBusy.then(drawActive).catch((err) => console.warn("[nimble]", err)); };
   OBR.scene.onMetadataChange(runActive);
   OBR.scene.onReadyChange(async (ready) => { if (ready) { try { dpi = await OBR.scene.grid.getDpi(); } catch (_) {} } runActive(); });

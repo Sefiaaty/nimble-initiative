@@ -222,7 +222,7 @@ OBR.onReady(async () => {
     if (birdRaise) { birdRaise = false; await OBR.popover.close(BIRD_ID); }
     await OBR.popover.open({
       id: BIRD_ID, url: new URL("bird.html", import.meta.url).href, width: 230, height: 200,
-      anchorReference: "POSITION", anchorPosition: { left: vw - 26, top: vh - 70 },
+      anchorReference: "POSITION", anchorPosition: { left: vw, top: vh - 70 },
       anchorOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" }, transformOrigin: { horizontal: "RIGHT", vertical: "BOTTOM" },
       hidePaper: true, disableClickAway: true, marginThreshold: 0,
     });

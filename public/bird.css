@@ -1,9 +1,9 @@
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:system-ui,sans-serif}
 #wrap{position:relative;width:100%;height:100%}
-#bird{position:absolute;right:6px;bottom:4px;width:140px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35));transform-origin:20% 90%}
+#bird{position:absolute;right:6px;bottom:15px;width:140px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35));transform-origin:20% 90%}
 body.talk #bird{animation:chirp .5s ease-in-out infinite alternate}
 @keyframes chirp{from{transform:rotate(0deg)}to{transform:rotate(-3deg) translateY(-1px)}}
-#bubble{position:absolute;left:10px;top:34px;width:100px;height:80px;overflow:visible;opacity:0;transform:scale(.4);transform-origin:76% 92%;transition:opacity .18s ease,transform .22s cubic-bezier(.3,1.6,.6,1);filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
+#bubble{position:absolute;left:25px;top:38px;width:80px;height:64px;overflow:visible;opacity:0;transform:scale(.4);transform-origin:76% 92%;transition:opacity .18s ease,transform .22s cubic-bezier(.3,1.6,.6,1);filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
 body.talk #bubble{opacity:1;transform:scale(1)}
 #bubble .b{fill:#e8dca8;stroke:#2a1d1a;stroke-width:4;stroke-linejoin:round}
 #bubble .sq{fill:none;stroke:#2a1d1a;stroke-width:3.2;stroke-linecap:round;stroke-dasharray:80;stroke-dashoffset:0}
@@ -14,3 +14,7 @@ body.talk #bubble .s2{animation:wig 1.1s linear infinite reverse}
 body.gm #mic{display:block}
 body.gm:hover #mic,#mic.on{opacity:1}
 #mic.on{background:#2e7d32}
+#branch{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+#branch .halo{fill:none;stroke:rgba(239,230,210,.75);stroke-width:5;stroke-linejoin:round;filter:blur(1.2px)}
+#branch .wood{fill:#18161a;stroke:#18161a;stroke-width:1.2;stroke-linejoin:round}
+#branch .twig{fill:none;stroke:#18161a;stroke-width:2.6;stroke-linecap:round;filter:drop-shadow(0 0 1.4px rgba(239,230,210,.8))}

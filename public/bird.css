@@ -15,6 +15,5 @@ body.gm #mic{display:block}
 body.gm:hover #mic,#mic.on{opacity:1}
 #mic.on{background:#2e7d32}
 #branch{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-#branch .halo{fill:none;stroke:rgba(239,230,210,.75);stroke-width:5;stroke-linejoin:round;filter:blur(1.2px)}
-#branch .wood{fill:#18161a;stroke:#18161a;stroke-width:1.2;stroke-linejoin:round}
-#branch .twig{fill:none;stroke:#18161a;stroke-width:2.6;stroke-linecap:round;filter:drop-shadow(0 0 1.4px rgba(239,230,210,.8))}
+#branch .halo{fill:none;stroke:rgba(239,230,210,.85);stroke-width:5.6;stroke-linecap:round;filter:blur(.9px)}
+#branch .line{fill:none;stroke:#18161a;stroke-width:2.6;stroke-linecap:round}

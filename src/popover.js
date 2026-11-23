@@ -7,7 +7,7 @@ import {
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
   clean, tempOf, damage, giveTemp, jumpTo,
   PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, partyOf, partyList, isHero, itemName,
-  SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY,
+  SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY, directLink,
   CONDITIONS, condDef, DURATIONS, addCond, removeCond, condsOnCombatEnd, condTimer, setUses, resetUses, COND_ORDER,
 } from "./common.js";
 
@@ -105,7 +105,7 @@ function setScenePeek(v) {
   try { localStorage.setItem(PEEK_KEY, v ? "1" : "0"); } catch (_) {}
   sceneBc.postMessage({ peek: v });
 }
-const mediaTag = (url, kind, cls) => !url ? "" : isVideo(url, kind)
+const mediaTag = (u0, kind, cls, url = directLink(u0)) => !url ? "" : isVideo(url, kind)
   ? `<video class="${cls}" src="${esc(url)}" autoplay loop muted playsinline></video>`
   : `<img class="${cls}" src="${esc(url)}" alt="">`;
 
@@ -134,7 +134,7 @@ function renderScene() {
 }
 
 async function showScene(x) {
-  await OBR.room.setMetadata({ [SCENE_KEY]: { on: true, url: x.url, kind: x.kind || "", title: x.title || "", sub: x.sub || "", at: Date.now() } });
+  await OBR.room.setMetadata({ [SCENE_KEY]: { on: true, url: directLink(x.url), kind: x.kind || "", title: x.title || "", sub: x.sub || "", at: Date.now() } });
 }
 async function handleScene(act, el) {
   const d = sceneDraft || (sceneDraft = { url: "", kind: "", title: "", sub: "" });
@@ -618,7 +618,7 @@ function renderParty() {
     const m = p.members[u] || {};
     const nm = m.name || heroNames.get(u) || "";
     return `<div class="prow ${m.hidden ? "hid" : ""}" data-url="${esc(u)}">
-      <img src="${esc(m.portrait || u)}" alt="">
+      <img src="${esc(directLink(m.portrait) || u)}" alt="">
       <div class="pf">
         <input type="text" placeholder="${esc(heroNames.get(u) || "Character name")}" value="${esc(m.name || "")}" data-act="ptyname" data-url="${esc(u)}" title="Character name (blank = token name)">
         <div class="pr2">
@@ -744,7 +744,7 @@ async function partyField(el) {
     const m = (p.members[u] ||= {});
     if (el.dataset.act === "ptyname") m.name = v;
     if (el.dataset.act === "ptycls") m.cls = v;
-    if (el.dataset.act === "ptyport") m.portrait = v;
+    if (el.dataset.act === "ptyport") m.portrait = directLink(v);
     if (el.dataset.act === "ptypid") { m.pid = v; m.pname = (players.find((pl) => pl.id === v) || {}).name || ""; }
   });
 }
@@ -930,7 +930,7 @@ app.addEventListener("input", (ev) => {
   if (el.dataset.cp && cp && el.tagName === "INPUT") { cp[el.dataset.cp] = el.value; return; }
   if (el.dataset.act === "scurl" || el.dataset.act === "sctitle" || el.dataset.act === "scsub") {
     const d = sceneDraft || (sceneDraft = { url: "", kind: "", title: "", sub: "" });
-    if (el.dataset.act === "scurl") { d.url = el.value.trim(); d.kind = ""; }
+    if (el.dataset.act === "scurl") { d.url = directLink(el.value); d.kind = ""; }
     if (el.dataset.act === "sctitle") d.title = el.value;
     if (el.dataset.act === "scsub") d.sub = el.value;
     const prev = app.querySelector(".sprev");

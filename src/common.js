@@ -17,7 +17,29 @@ export const SCENE_CH = "nimble-scene";
 export const BAR_HIDDEN_KEY = `${ID}/barHiddenForMe`; // this browser only: don't show the party bar here   // BroadcastChannel between this browser's extension frames
 export function sceneOf(md) {
   const s = (md && md[SCENE_KEY]) || {};
-  return { on: !!s.on && !!s.url, url: s.url || "", kind: s.kind || "", title: s.title || "", sub: s.sub || "", at: s.at || 0 };
+  return { on: !!s.on && !!s.url, url: directLink(s.url || ""), kind: s.kind || "", title: s.title || "", sub: s.sub || "", at: s.at || 0 };
+}
+// Turn share links into direct file links so pictures and videos load:
+// Dropbox (www.dropbox.com/...?dl=0) -> dl.dropboxusercontent.com, keeping the rlkey that opens the file;
+// Google Drive file pages -> a direct image link.
+export function directLink(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  let u;
+  try { u = new URL(raw); } catch (_) { return raw; }
+  const host = u.hostname.replace(/^www\./, "");
+  if (host === "dropbox.com" || host === "dl.dropbox.com" || host === "dl.dropboxusercontent.com") {
+    const out = new URL(`https://dl.dropboxusercontent.com${u.pathname}`);
+    const rlkey = u.searchParams.get("rlkey");
+    if (rlkey) out.searchParams.set("rlkey", rlkey);
+    return out.href;
+  }
+  if (host === "drive.google.com") {
+    const m = u.pathname.match(/\/file\/d\/([^/]+)/);
+    const id = m ? m[1] : u.searchParams.get("id");
+    if (id) return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w4000`;
+  }
+  return raw;
 }
 export const isVideo = (url, kind) => kind === "video" || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url || "");
 export const CLASSES = ["Berserker", "Commander", "Hunter", "Mage", "Oathsworn", "Shadowmancer", "Shepherd", "Songweaver", "Stormshifter", "The Cheat", "Zephyr"];

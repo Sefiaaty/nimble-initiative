@@ -2,7 +2,7 @@
 // Players: talking light, raise hand, quick emotes, say (speech bubble), whisper to the GM, BRB, spend Inspiration.
 // GM: soft pings, nudge a player, quiet meter, "ask next", Inspiration, session recap stats.
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, STATE_KEY, TALK_CH, PARTY_KEY, partyOf, partyList, barLayout, isHero, getHeroImages, itemName } from "./common.js";
+import { ID, STATE_KEY, TALK_CH, PARTY_KEY, partyOf, partyList, barLayout, directLink, isHero, getHeroImages, itemName } from "./common.js";
 import { CLASS_ICONS } from "./classIcons.js";
 
 const EV_CH = `${ID}/party-ev`;     // broadcast: player state heartbeats and one-off events
@@ -159,7 +159,7 @@ function render() {
       ${say && now - say.at < Math.min(16000, 6000 + say.text.length * 60) ? `<div class="say">${esc(say.text)}</div>` : ""}
       ${askNext === pid ? `<div class="asknext">▼ ask next</div>` : ""}
       ${em && now - em.at < 3500 ? `<div class="emote" data-at="${em.at}">${esc(em.e)}</div>` : ""}
-      <div class="frame" title="${esc(name)}${m.pname ? " (" + esc(m.pname) + ")" : ""}"><div class="art" style="background-image:url('${esc(m.portrait || u)}')"></div><img class="cut" src="${esc(m.portrait || u)}" alt="" draggable="false">${icon}
+      <div class="frame" title="${esc(name)}${m.pname ? " (" + esc(m.pname) + ")" : ""}"><div class="art" style="background-image:url('${esc(directLink(m.portrait) || u)}')"></div><img class="cut" src="${esc(directLink(m.portrait) || u)}" alt="" draggable="false">${icon}
         ${hand ? `<button class="hand" data-act="lower" data-pid="${esc(pid)}" title="${mine ? "Lower your hand" : gm ? "Lower their hand" : "Hand raised"}">!</button>` : ""}
         ${wh ? `<button class="mail" data-act="read" data-pid="${esc(pid)}" title="Whisper from ${esc(name)}">✉${wh > 1 ? wh : ""}</button>` : ""}
         ${insp ? `<button class="insp" data-act="spend" data-url="${esc(u)}" title="${mine ? "Spend Inspiration (click twice)" : "Inspiration"}">✦${insp > 1 ? insp : ""}</button>` : ""}

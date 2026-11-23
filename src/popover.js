@@ -8,7 +8,7 @@ import {
   clean, tempOf, damage, giveTemp, jumpTo,
   PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, SUBCLASSES, partyOf, partyList, isHero, itemName,
   SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY, directLink, TOD_KEY, todOf, todLook, TOD_NAMES,
-  CONDITIONS, condDef, DURATIONS, addCond, removeCond, condsOnCombatEnd, condTimer, setUses, resetUses, COND_ORDER,
+  CONDITIONS, condDef, DURATIONS, addCond, removeCond, condsOnCombatEnd, condTimer, setUses, resetUses, COND_ORDER, slotFor, FX_CH,
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -116,10 +116,11 @@ function renderScene() {
   const same = live.on && live.url === d.url && live.title === d.title && live.sub === d.sub;
   const presets = loadPresets();
   const tod = todOf(sceneMd);
-  const todBox = `<div class="tod"><label class="auto"><input type="checkbox" data-act="todon" ${tod.on ? "checked" : ""}> <b>Time of day</b> on this map</label>
+  const todBox = `<div class="tod"><label class="auto"><input type="checkbox" data-act="todon" ${tod.on ? "checked" : ""}> <b>Time of day</b> on this map <span class="todnow">${tod.on ? esc(todLook(tod.t).name) : ""}</span></label>
       <input type="range" min="0" max="1000" step="1" value="${Math.round(tod.t * 1000)}" data-act="todt" ${tod.on ? "" : "disabled"} class="todr">
-      <div class="todl">${TOD_NAMES.map((n) => `<span style="left:${n.t * 100}%">${n.name}</span>`).join("")}</div>
-      <div class="muted small">Tints the map and tokens for everyone. Each map keeps its own time.</div></div>`;
+      <div class="todl">${TOD_NAMES.filter((n) => ["Morning", "Noon", "Evening", "Night", "Cave"].includes(n.name)).map((n) => `<span style="left:${n.t * 100}%">${n.name}</span>`).join("")}</div>
+      <div class="muted small">Tints the map and tokens for everyone. Each map keeps its own time. Cave is pitch black except around lights.</div>
+      <div class="fxrow"><button data-act="scflash" title="A lightning flash on everyone's screen">⚡ Lightning</button><button data-act="scrumble" title="Shake the map for everyone for a second">Rumble</button></div></div>`;
   return `<div class="scene">${todBox}
     ${live.on ? `<div class="slive"><b>Live:</b> ${esc(live.title || "untitled scene")}
       <button data-act="scpeek" title="Hide the scene for you only, so you can work on the map">${scenePeek ? "Back to scene" : "Peek"}</button>
@@ -142,6 +143,7 @@ async function showScene(x) {
   await OBR.room.setMetadata({ [SCENE_KEY]: { on: true, url: directLink(x.url), kind: x.kind || "", title: x.title || "", sub: x.sub || "", at: Date.now() } });
 }
 async function handleScene(act, el) {
+  if (act === "scflash" || act === "scrumble") { OBR.broadcast.sendMessage(FX_CH, { k: act === "scflash" ? "flash" : "rumble" }, { destination: "ALL" }); return; }
   const d = sceneDraft || (sceneDraft = { url: "", kind: "", title: "", sub: "" });
   const presets = loadPresets();
   if (act === "scpick") {
@@ -303,6 +305,7 @@ const typingInScene = () => { const a = document.activeElement; return tab === "
 let todPending = null, todTimer = null;
 function queueTod(t) {
   todPending = t;
+  const nowEl = document.querySelector(".todnow"); if (nowEl) nowEl.textContent = todLook(t).name;
   if (todTimer) return;
   todTimer = setTimeout(async () => { todTimer = null; const v = todPending; await OBR.scene.setMetadata({ [TOD_KEY]: { on: true, t: v } }).catch(() => {}); }, 90);
 }
@@ -648,6 +651,8 @@ function renderParty() {
         <button data-act="ptyup" data-url="${esc(u)}" ${i === 0 ? "disabled" : ""} title="Move left">◀</button>
         <button data-act="ptydown" data-url="${esc(u)}" ${i === ordered.length - 1 ? "disabled" : ""} title="Move right">▶</button>
         <button data-act="ptyhide" data-url="${esc(u)}" title="${m.hidden ? "Show on the bar" : "Hide from the bar"}">${m.hidden ? "Show" : "Hide"}</button>
+        <button data-act="ptylink" data-url="${esc(u)}" title="Select this hero's token on the map first, then click: that token belongs to this slot from now on (on every map that uses the same picture)">Link token${m.links && m.links.length ? ` (${m.links.length})` : ""}</button>
+        ${m.links && m.links.length ? `<button data-act="ptyunlink" data-url="${esc(u)}" title="Forget the linked token pictures">Unlink</button>` : ""}
         <button class="pdel ${confirmDel === u ? "sure" : ""}" data-act="ptydel" data-url="${esc(u)}" title="Remove from the party and unmark as hero">${confirmDel === u ? "Sure?" : "Remove"}</button>
       </div>
     </div>`;
@@ -710,6 +715,25 @@ async function handleParty(act, el) {
     });
   }
   if (act === "ptyhide") await saveParty((p) => { mem(p).hidden = !mem(p).hidden; });
+  if (act === "ptylink") {
+    // the selected token(s) now belong to this slot; if their picture had its own slot, that slot merges into this one
+    const sel = (await OBR.player.getSelection()) || [];
+    const toks = (await OBR.scene.items.getItems(sel)).filter((i) => i.layer === "CHARACTER" && i.image && i.image.url);
+    if (!toks.length) { OBR.notification.show("Select the hero's token on the map first, then click Link token"); return; }
+    const urls = [...new Set(toks.map((t) => t.image.url))].filter((x) => x !== u);
+    const md = await OBR.room.getMetadata();
+    const p = partyOf(md);
+    const heroes = (Array.isArray(md[HEROES_KEY]) ? md[HEROES_KEY] : []).filter((x) => !urls.includes(x));
+    for (const [k, m] of Object.entries(p.members)) if (m && Array.isArray(m.links)) m.links = m.links.filter((l) => !urls.includes(l) || k === u);
+    for (const x of urls) { delete p.members[x]; }
+    p.order = p.order.filter((x) => !urls.includes(x));
+    const m = (p.members[u] ||= {});
+    m.links = [...new Set([...(m.links || []), ...urls])];
+    await OBR.room.setMetadata({ [HEROES_KEY]: heroes, [PARTY_KEY]: p });
+    await OBR.scene.items.updateItems(toks.map((t) => t.id), (ds) => { for (const d of ds) d.metadata[HERO_FLAG] = true; });
+    OBR.notification.show(`Linked to ${m.name || heroNames.get(u) || "this hero"}`);
+  }
+  if (act === "ptyunlink") await saveParty((p) => { delete mem(p).links; });
   if (act === "ptysize") await saveParty((p) => { p.size = Math.max(80, Math.min(400, p.size + Number(el.dataset.d))); });
   if (act === "ptygap") await saveParty((p) => { p.gap = Math.max(0, Math.min(80, p.gap + Number(el.dataset.d))); });
   if (act === "ptyscale") await saveParty((p) => { const m = mem(p); m.scale = Math.round(Math.max(0.5, Math.min(2.5, (Number(m.scale) || 1) + Number(el.dataset.d))) * 10) / 10; });
@@ -769,8 +793,8 @@ async function loadHeroNames() {
   if (!(await OBR.scene.isReady())) return;
   const heroes = Array.isArray(roomMd[HEROES_KEY]) ? roomMd[HEROES_KEY] : [];
   for (const it of await OBR.scene.items.getItems((i) => i.layer === "CHARACTER")) {
-    const url = it.image && it.image.url;
-    if (url && isHero(it, heroes) && !heroNames.has(url)) heroNames.set(url, itemName(it));
+    const slot = slotFor(it.image && it.image.url, roomMd);
+    if (slot && (isHero(it, heroes) || slot !== it.image.url) && !heroNames.has(slot)) heroNames.set(slot, itemName(it));
   }
 }
 

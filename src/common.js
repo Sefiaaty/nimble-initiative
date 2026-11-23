@@ -47,11 +47,13 @@ export function todOf(md) { const t = (md && md[TOD_KEY]) || {}; return { on: !!
 // t: 0 morning ... 0.25 noon ... 0.45 afternoon ... 0.62 evening ... 0.78 dusk ... 1 night
 const TOD_STOPS = [
   { t: 0.0, name: "Morning", tint: [1.0, 0.91, 0.82], desat: 0.0, glow: 0.3 },
-  { t: 0.25, name: "Noon", tint: [1.0, 1.0, 1.0], desat: 0.0, glow: 0.2 },
-  { t: 0.45, name: "Afternoon", tint: [1.0, 0.95, 0.86], desat: 0.0, glow: 0.3 },
-  { t: 0.62, name: "Evening", tint: [1.0, 0.76, 0.52], desat: 0.0, glow: 0.6 },
-  { t: 0.78, name: "Dusk", tint: [0.66, 0.53, 0.76], desat: 0.15, glow: 0.85 },
-  { t: 1.0, name: "Night", tint: [0.42, 0.48, 0.72], desat: 0.35, glow: 1.0 },
+  { t: 0.2, name: "Noon", tint: [1.0, 1.0, 1.0], desat: 0.0, glow: 0.2 },
+  { t: 0.36, name: "Afternoon", tint: [1.0, 0.95, 0.86], desat: 0.0, glow: 0.3 },
+  { t: 0.5, name: "Evening", tint: [1.0, 0.76, 0.52], desat: 0.0, glow: 0.6 },
+  { t: 0.64, name: "Dusk", tint: [0.66, 0.53, 0.76], desat: 0.15, glow: 0.85 },
+  { t: 0.8, name: "Night", tint: [0.42, 0.48, 0.72], desat: 0.35, glow: 1.0 },
+  // a cave or a sealed dungeon: black except where something gives light
+  { t: 1.0, name: "Cave", tint: [0.04, 0.04, 0.06], desat: 0.6, glow: 1.15 },
 ];
 export function todLook(t) {
   let i = 0;
@@ -68,19 +70,36 @@ export const TOD_NAMES = TOD_STOPS.map((x) => ({ t: x.t, name: x.name }));
 export const LIGHT_KEY = `${ID}/light`;
 export const LIGHT_TOOL = `${ID}/lights`;
 export const LIGHT_MAX = 32;
+// ---------- water: any shape the GM marks ripples and shimmers ----------
+export const WATER_KEY = `${ID}/water`;
+export const WATER_MAX = 16;
+export const WATER_STYLES = [
+  { k: "pool", name: "Still water", amp: 1, speed: 1 },
+  { k: "sea", name: "Sea", amp: 1.6, speed: 0.8 },
+  { k: "river", name: "River (flows along the shape)", amp: 1.1, speed: 1.2 },
+];
+export function waterOf(item) {
+  const w = item && item.metadata && item.metadata[WATER_KEY];
+  if (!w) return null;
+  const st = WATER_STYLES.find((x) => x.k === w.k) || WATER_STYLES[0];
+  const n = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(3, Number(v))) : d);
+  return { k: st.k, amp: n(w.amp, 1), speed: n(w.speed, 1), reverse: !!w.reverse };
+}
+// lightning and rumble: a one-off moment everyone sees at once
+export const FX_CH = `${ID}/fx`;
 export const LIGHTS_OFF_KEY = `${ID}/lightsOff`; // per map: every light switched off at once
 // color, size in squares, brightness, flame flicker 0..1, slow pulse 0..1
 export const LIGHT_PRESETS = [
-  { k: "torch", name: "Torch", icon: "torch", color: "#ff9a40", r: 4, power: 1.1, flame: 1, pulse: 0 },
+  { k: "torch", name: "Torch", icon: "torch", color: "#ff9a40", r: 8, power: 1.1, flame: 1, pulse: 0 },
   { k: "candle", name: "Candle", icon: "candle-light", color: "#ffc070", r: 2, power: 0.8, flame: 0.6, pulse: 0 },
-  { k: "campfire", name: "Campfire", icon: "campfire", color: "#ff7e30", r: 6, power: 1.3, flame: 1, pulse: 0 },
-  { k: "chandelier", name: "Chandelier", icon: "ceiling-light", color: "#ffd28c", r: 7, power: 1.0, flame: 0.25, pulse: 0 },
-  { k: "lantern", name: "Lantern", icon: "lantern-flame", color: "#ffc874", r: 5, power: 1.0, flame: 0.35, pulse: 0 },
+  { k: "campfire", name: "Campfire", icon: "campfire", color: "#ff7e30", r: 10, power: 1.3, flame: 1, pulse: 0 },
+  { k: "chandelier", name: "Chandelier", icon: "ceiling-light", color: "#ffd28c", r: 10, power: 1.0, flame: 0.25, pulse: 0 },
+  { k: "lantern", name: "Lantern", icon: "lantern-flame", color: "#ffc874", r: 12, power: 1.0, flame: 0.35, pulse: 0 },
   { k: "mushrooms", name: "Glowing mushrooms", icon: "mushrooms-cluster", color: "#b45cff", r: 3, power: 1.3, flame: 0, pulse: 0.45 },
   { k: "crystal", name: "Crystals", icon: "crystal-cluster", color: "#5cc8ff", r: 3, power: 1.0, flame: 0, pulse: 0.35 },
-  { k: "lava", name: "Lava", icon: "lava", color: "#ff5a1e", r: 5, power: 1.2, flame: 0.2, pulse: 0.3 },
-  { k: "spell", name: "Light spell", icon: "spell", color: "#dfe9ff", r: 4, power: 1.1, flame: 0, pulse: 0.08 },
-  { k: "fireball", name: "Fire in hand", icon: "fireball", color: "#ff6a1a", r: 3, power: 1.3, flame: 0.8, pulse: 0.15 },
+  { k: "lava", name: "Lava", icon: "lava", color: "#ff5a1e", r: 6, power: 1.2, flame: 0.2, pulse: 0.3 },
+  { k: "spell", name: "Light spell", icon: "spell", color: "#dfe9ff", r: 8, power: 1.1, flame: 0, pulse: 0.08 },
+  { k: "fireball", name: "Fire in hand", icon: "fireball", color: "#ff6a1a", r: 6, power: 1.3, flame: 0.8, pulse: 0.15 },
 ];
 // what a hero can carry (right-click their token)
 export const CARRY_KINDS = ["torch", "lantern", "candle", "spell", "fireball"];
@@ -180,9 +199,24 @@ export async function updateState(fn) {
   return out || s;
 }
 
+// Token pictures linked to a party slot (for when a hero's token picture changed but the slot should stay).
+export function heroLinks(md) {
+  const out = new Map();
+  const members = partyOf(md).members;
+  for (const [u, m] of Object.entries(members)) for (const l of (m && Array.isArray(m.links) ? m.links : [])) out.set(l, u);
+  return out;
+}
+// Which party slot a token picture belongs to (its own, or the slot it was linked to).
+export function slotFor(url, md) {
+  if (!url) return null;
+  const heroes = Array.isArray(md[HEROES_KEY]) ? md[HEROES_KEY] : [];
+  return heroes.includes(url) ? url : heroLinks(md).get(url) || null;
+}
+// Every picture that counts as a hero: slots plus linked pictures.
 export async function getHeroImages() {
   const md = await OBR.room.getMetadata();
-  return Array.isArray(md[HEROES_KEY]) ? md[HEROES_KEY] : [];
+  const heroes = Array.isArray(md[HEROES_KEY]) ? md[HEROES_KEY] : [];
+  return [...heroes, ...heroLinks(md).keys()];
 }
 
 export function isHero(item, heroImages) {

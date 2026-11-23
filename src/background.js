@@ -1,8 +1,8 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve, buildEffect, buildImage, buildLabel, buildShape } from "@owlbear-rodeo/sdk";
 import {
-  ID, TALK_CH, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, isLightMarker, CARRY_KINDS, CARRY_LAST_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
-  getHeroImages, getState, setState, updateState, addTokens, maxMoved,
+  ID, TALK_CH, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, WATER_KEY, WATER_MAX, WATER_STYLES, waterOf, FX_CH, isLightMarker, CARRY_KINDS, CARRY_LAST_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
+  getHeroImages, heroLinks, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
 const CHAR = { key: "layer", value: "CHARACTER" };
@@ -61,8 +61,10 @@ OBR.onReady(async () => {
         }
       });
       const urls = ctx.items.map((i) => i.image?.url).filter(Boolean);
-      let heroes = await getHeroImages();
-      heroes = makeHero ? [...new Set([...heroes, ...urls])] : heroes.filter((u) => !urls.includes(u));
+      const rmd = await OBR.room.getMetadata();
+      let heroes = Array.isArray(rmd[HEROES_KEY]) ? rmd[HEROES_KEY] : [];
+      const linked = heroLinks(rmd);
+      heroes = makeHero ? [...new Set([...heroes, ...urls.filter((u) => !linked.has(u))])] : heroes.filter((u) => !urls.includes(u));
       await OBR.room.setMetadata({ [HEROES_KEY]: heroes });
       await updateState((s) => {
         for (const e of s.entries) {
@@ -129,7 +131,7 @@ OBR.onReady(async () => {
     let toks = [];
     if (talkingNow.size) {
       const members = partyOf(await OBR.room.getMetadata()).members;
-      const urls = new Set(Object.entries(members).filter(([, m]) => m && m.pid && talkingNow.has(m.pid)).map(([u]) => u));
+      const urls = new Set(Object.entries(members).filter(([, m]) => m && m.pid && talkingNow.has(m.pid)).flatMap(([u, m]) => [u, ...(Array.isArray(m.links) ? m.links : [])]));
       const gm = (await OBR.player.getRole()) === "GM";
       if (urls.size) toks = await OBR.scene.items.getItems((i) => i.layer === "CHARACTER" && i.image && urls.has(i.image.url) && (gm || i.visible !== false));
     }
@@ -168,41 +170,80 @@ OBR.onReady(async () => {
   // It reads each pixel of the scene (map, tokens, fog), grades it for the time of day, then adds back
   // light around each lamp. Lights show softly by day and strongly at night.
   const TOD_FX = `${ID}-tod`, TOD_OLD = [`${ID}-tod-tint`, `${ID}-tod-sat`];
-  const lookSksl = (n) => {
-    let u = "", sum = "";
-    for (let i = 0; i < n; i++) { u += `uniform vec3 lp${i};\nuniform vec3 lc${i};\nuniform vec3 lf${i};\n`; sum += `  L += lamp(coord, lp${i}, lc${i}, lf${i}, t);\n`; }
+  // n lamps, w water shapes. Water bends where the scene is sampled; then the time of day grades it and lamps light it.
+  const lookSksl = (n, w) => {
+    let u = "", sum = "", wsum = "";
+    for (let i = 0; i < n; i++) { u += `uniform vec3 lp${i};\nuniform vec3 lc${i};\nuniform vec3 lf${i};\n`; sum += `  L += lamp(coord, lp${i}, lc${i}, lf${i}, t, I);\n`; }
+    for (let i = 0; i < w; i++) { u += `uniform vec3 wp${i};\nuniform vec3 wh${i};\nuniform vec3 ws${i};\n`; wsum += `  water(coord, wp${i}, wh${i}, ws${i}, t, off, sh);\n`; }
     return `uniform shader scene;
 uniform mat3 view;
 uniform float time;
 uniform vec3 tint;
 uniform float amount;
 uniform float glow;
+uniform float flash;
+uniform vec2 shake;
 ${u}
-vec3 lamp(vec2 w, vec3 p, vec3 c, vec3 f, float t) {
+vec3 lamp(vec2 w, vec3 p, vec3 c, vec3 f, float t, inout vec3 I) {
   float s = f.z;
   float flick = 1.0 - f.x * (0.10 + 0.08 * sin(t * 9.1 + s) + 0.06 * sin(t * 15.7 + s * 1.7) + 0.05 * sin(t * 23.3 + s * 2.9) + 0.04 * sin(t * 4.3 + s * 3.1));
   float pulse = 1.0 - f.y * (0.5 + 0.5 * sin(t * 1.3 + s));
-  float r = p.z * (1.0 + f.x * 0.035 * sin(t * 7.3 + s * 1.3));
-  float a = clamp(1.0 - distance(w, p.xy) / r, 0.0, 1.0);
-  a = a * a * (3.0 - 2.0 * a);
-  return c * (a * a) * flick * pulse;
+  float r = p.z * (1.0 + f.x * 0.03 * sin(t * 7.3 + s * 1.3));
+  float d = distance(w, p.xy) / r;
+  float a = 1.0 - smoothstep(0.42, 1.0, d);   // full light for about half the reach, then fading out
+  a = a * flick * pulse;
+  float k = dot(c, vec3(0.333));
+  I += mix(vec3(k), c, 0.55) * a;              // what it lights: mostly white, tinted by its colour
+  return c * a * (1.0 - smoothstep(0.0, 0.6, d)) ; // the warm haze close to it
+}
+void water(vec2 w, vec3 p, vec3 h, vec3 s, float t, inout vec2 off, inout float sh) {
+  float cr = cos(p.z), sr = sin(p.z);
+  vec2 d = w - p.xy;
+  vec2 q = vec2(d.x * cr + d.y * sr, -d.x * sr + d.y * cr);
+  float edge = max(18.0, min(h.x, h.y) * 0.25);
+  float m;
+  if (h.z > 0.5) { m = smoothstep(0.0, edge, min(h.x - abs(q.x), h.y - abs(q.y))); }
+  else { m = smoothstep(0.0, edge, (1.0 - length(q / h.xy)) * min(h.x, h.y)); }
+  if (m <= 0.0) return;
+  float amp = s.x * 4.0, sp = s.y;
+  vec2 o;
+  if (s.z > 1.5) {          // river: waves travel along the shape
+    float fx = q.x - t * 55.0 * sp;
+    o = vec2(sin(q.y * 0.05 + fx * 0.03) * 0.6, cos(fx * 0.045 + q.y * 0.012));
+  } else if (s.z > 0.5) {   // sea: long slow swells and a smaller chop on top
+    o = vec2(sin(q.y * 0.018 + t * 0.9 * sp) + 0.4 * sin(q.x * 0.05 + t * 1.7 * sp), cos(q.x * 0.016 + t * 0.8 * sp) + 0.4 * cos(q.y * 0.045 - t * 1.5 * sp));
+  } else {                  // still water: small ripples
+    o = vec2(sin(q.y * 0.04 + t * 1.5 * sp), cos(q.x * 0.035 + t * 1.2 * sp)) * 0.8;
+  }
+  o *= amp * m;
+  off += vec2(o.x * cr - o.y * sr, o.x * sr + o.y * cr);
+  float c1 = sin(q.x * 0.055 + t * 1.9 * sp + sin(q.y * 0.03 + t)) * sin(q.y * 0.06 - t * 1.6 * sp + sin(q.x * 0.025 - t * 0.7));
+  sh += pow(max(c1, 0.0), 6.0) * 0.14 * m * s.x;
 }
 half4 main(float2 coord) {
-  vec2 uv = (vec3(coord, 1) * view).xy;
-  half4 c = scene.eval(uv);
   float t = mod(time, 3600.0);
-  vec3 g = vec3(c.rgb);
+  vec2 off = vec2(0.0);
+  float sh = 0.0;
+${wsum}  vec2 uv = (vec3(coord + off, 1) * view).xy + shake;
+  half4 c = scene.eval(uv);
+  vec3 g = vec3(c.rgb) + vec3(0.85, 0.95, 1.0) * sh * float(c.a);
   float l = dot(g, vec3(0.299, 0.587, 0.114));
   g = mix(g, vec3(l), amount);
+  vec3 I = vec3(0.0);
   vec3 L = vec3(0.0);
-${sum}  L *= glow;
-  vec3 o = g * (tint + L) + L * 0.08 * float(c.a);
+${sum}  I *= glow;
+  L *= glow;
+  vec3 k = min(tint + I, vec3(1.35));
+  vec3 o = g * k + L * 0.07 * float(c.a);
+  vec3 bright = vec3(c.rgb) * 1.25 + 0.3;          // lightning: everything shows for a moment, washed out white
+  o = mix(o, bright, flash * float(c.a));
   return half4(half3(o), c.a);
 }`;
   };
-  let lookSig = "", lookN = -1, toolOff = null;
+  let lookSig = "", lookN = "", toolOff = null;
   // the toolbar button shows "all off" or "all on" depending on this map
   const syncLightsTool = (off) => { if (off === toolOff) return; toolOff = off; OBR.tool.setMetadata(LIGHT_TOOL, { allOff: off }).catch(() => {}); };
+  const fxNow = { flash: 0, shake: { x: 0, y: 0 }, busy: false };
   async function drawLook() {
     if (!(await OBR.scene.isReady())) return;
     const smd = await OBR.scene.getMetadata();
@@ -222,26 +263,45 @@ ${sum}  L *= glow;
       const seed = (parseInt(m.id.replace(/[^0-9a-f]/gi, "").slice(-6), 16) || 7) % 1000 / 31.7;
       lamps.push({ p: { x: m.position.x, y: m.position.y, z: L.r * gdpi }, c: { x: r * L.power, y: g * L.power, z: b * L.power }, f: { x: L.flame, y: L.pulse, z: seed } });
     }
+    // water: any shape or drawing marked as water (hidden from players on purpose, the ripple is what they see)
+    const wItems = (await OBR.scene.items.getItems((i) => !!(i.metadata && i.metadata[WATER_KEY]))).slice(0, WATER_MAX);
+    const waters = [];
+    for (const it of wItems) {
+      const W = waterOf(it);
+      let b;
+      try { b = await OBR.scene.items.getItemBounds([it.id]); } catch (_) { continue; }
+      if (!b || !b.center) continue;
+      const isShape = it.type === "SHAPE" && typeof it.width === "number";
+      const sx = Math.abs(it.scale?.x || 1), sy = Math.abs(it.scale?.y || 1);
+      const hx = isShape ? (it.width * sx) / 2 : b.width / 2, hy = isShape ? (it.height * sy) / 2 : b.height / 2;
+      const rot = isShape ? ((it.rotation || 0) * Math.PI) / 180 + (W.reverse ? Math.PI : 0) : (W.reverse ? Math.PI : 0);
+      const rect = isShape ? it.shapeType === "RECTANGLE" : true;
+      const kind = W.k === "river" ? 2 : W.k === "sea" ? 1 : 0;
+      waters.push({ p: { x: b.center.x, y: b.center.y, z: rot }, h: { x: hx, y: hy, z: rect ? 1 : 0 }, s: { x: W.amp, y: W.speed, z: kind } });
+    }
     const look = tod.on ? todLook(tod.t) : { tint: [1, 1, 1], desat: 0, glow: 0.55 };
-    const want = tod.on || lamps.length > 0;
-    const sig = JSON.stringify([want, look, lamps]);
+    const want = tod.on || lamps.length > 0 || waters.length > 0 || fxNow.busy;
+    const sig = JSON.stringify([want, look, lamps, waters]);
     if (sig === lookSig) return; // only touch the effect when something changed
     lookSig = sig;
+    const shapeKey = `${lamps.length}/${waters.length}`;
     const have = await OBR.scene.local.getItems((i) => i.id === TOD_FX || TOD_OLD.includes(i.id));
     let fx = have.find((i) => i.id === TOD_FX);
-    const old = have.filter((i) => i.id !== TOD_FX || (!want) || lamps.length !== lookN).map((i) => i.id);
+    const old = have.filter((i) => i.id !== TOD_FX || (!want) || shapeKey !== lookN).map((i) => i.id);
     if (old.length) { await OBR.scene.local.deleteItems(old); if (old.includes(TOD_FX)) fx = null; }
-    if (!want) { lookN = -1; return; }
+    if (!want) { lookN = ""; return; }
     const uniforms = [
       { name: "tint", value: { x: look.tint[0], y: look.tint[1], z: look.tint[2] } },
       { name: "amount", value: look.desat }, { name: "glow", value: look.glow },
+      { name: "flash", value: fxNow.flash }, { name: "shake", value: fxNow.shake },
     ];
     lamps.forEach((l, i) => uniforms.push({ name: `lp${i}`, value: l.p }, { name: `lc${i}`, value: l.c }, { name: `lf${i}`, value: l.f }));
+    waters.forEach((w, i) => uniforms.push({ name: `wp${i}`, value: w.p }, { name: `wh${i}`, value: w.h }, { name: `ws${i}`, value: w.s }));
     if (fx) { await OBR.scene.local.updateItems([TOD_FX], (items) => { for (const it of items) it.uniforms = uniforms; }); return; }
-    lookN = lamps.length;
+    lookN = shapeKey;
     await OBR.scene.local.addItems([
-      buildEffect().id(TOD_FX).effectType("VIEWPORT").sksl(lookSksl(lamps.length)).uniforms(uniforms)
-        .layer("POST_PROCESS").locked(true).disableHit(true).name("Time of day and lights").build(),
+      buildEffect().id(TOD_FX).effectType("VIEWPORT").sksl(lookSksl(lamps.length, waters.length)).uniforms(uniforms)
+        .layer("POST_PROCESS").locked(true).disableHit(true).name("Time of day, lights and water").build(),
     ]);
   }
   let lookBusy = Promise.resolve(), lookT = 0;
@@ -249,8 +309,39 @@ ${sum}  L *= glow;
   const runLookSoon = () => { clearTimeout(lookT); lookT = setTimeout(runLook, 60); };
   OBR.scene.onMetadataChange(runLook);
   OBR.scene.items.onChange(runLookSoon);
-  OBR.scene.onReadyChange((ready) => { lookSig = ""; lookN = -1; if (ready) setTimeout(runLook, 300); });
+  OBR.scene.onReadyChange((ready) => { lookSig = ""; lookN = ""; if (ready) setTimeout(runLook, 300); });
   runLook();
+
+  // ---- lightning and rumble: the GM fires one, every screen plays it at the same moment ----
+  const flashAt = (e) => (e < 50 ? e / 50 : e < 180 ? 1 - ((e - 50) / 130) * 0.85 : e < 260 ? 0.15 * (1 - (e - 180) / 80)
+    : e < 310 ? ((e - 260) / 50) * 0.7 : e < 900 ? 0.7 * Math.pow(1 - (e - 310) / 590, 2) : 0);
+  let fxRuns = 0;
+  async function playFx(k) {
+    if (!(await OBR.scene.isReady())) return;
+    fxRuns++; fxNow.busy = true; lookSig = "";
+    runLook(); await lookBusy;
+    const dur = k === "flash" ? 900 : 1100, start = performance.now();
+    const push = () => OBR.scene.local.updateItems([TOD_FX], (items) => {
+      for (const it of items) it.uniforms = it.uniforms.map((u) => (u.name === "flash" ? { ...u, value: fxNow.flash } : u.name === "shake" ? { ...u, value: fxNow.shake } : u));
+    }).catch(() => {});
+    await new Promise((done) => {
+      const tick = async () => {
+        const e = performance.now() - start;
+        if (k === "flash") fxNow.flash = Math.max(0, Math.min(1, flashAt(e)));
+        else {
+          const a = 13 * Math.pow(Math.max(0, 1 - e / dur), 1.4);
+          fxNow.shake = { x: a * (Math.sin(e * 0.09) + 0.6 * Math.sin(e * 0.23 + 1.3)), y: a * (Math.cos(e * 0.11) * 0.8 + 0.5 * Math.sin(e * 0.19 + 0.4)) };
+        }
+        await push();
+        if (e < dur) setTimeout(tick, 33); else done();
+      };
+      tick();
+    });
+    if (k === "flash") fxNow.flash = 0; else fxNow.shake = { x: 0, y: 0 };
+    await push();
+    if (--fxRuns <= 0) { fxRuns = 0; fxNow.busy = false; lookSig = ""; runLook(); }
+  }
+  OBR.broadcast.onMessage(FX_CH, (ev) => { const k = ev.data && ev.data.k; if (k === "flash" || k === "rumble") playFx(k).catch((err) => console.warn("[nimble fx]", err)); });
 
   // ---- a small badge on a token that carries a light, like it is holding the torch (local, for everyone) ----
   const HELD = `${ID}-held-`;
@@ -302,6 +393,16 @@ ${sum}  L *= glow;
       OBR.notification.show(off ? "Lights back on" : "All lights off on this map");
     },
   });
+  await OBR.tool.createAction({
+    id: `${LIGHT_TOOL}/flash`,
+    icons: [{ icon: lightIcon("flash"), label: "Lightning flash (everyone sees it)", filter: { activeTools: [LIGHT_TOOL] } }],
+    onClick() { OBR.broadcast.sendMessage(FX_CH, { k: "flash" }, { destination: "ALL" }); },
+  });
+  await OBR.tool.createAction({
+    id: `${LIGHT_TOOL}/rumble`,
+    icons: [{ icon: lightIcon("rumble"), label: "Rumble: shake the map for everyone", filter: { activeTools: [LIGHT_TOOL] } }],
+    onClick() { OBR.broadcast.sendMessage(FX_CH, { k: "rumble" }, { destination: "ALL" }); },
+  });
   for (const p of LIGHT_PRESETS) {
     await OBR.tool.createMode({
       id: `${LIGHT_TOOL}/${p.k}`,
@@ -323,6 +424,12 @@ ${sum}  L *= glow;
     id: `${ID}/light-menu`,
     icons: [{ icon: lightIcon("tool"), label: "Light", filter: { roles: ["GM"], every: [{ key: ["metadata", LIGHT_KEY], operator: "!=", value: undefined }] } }],
     embed: { url: new URL("light.html", import.meta.url).href, height: 212 },
+  });
+  // water: draw a shape (or a closed drawing) over the sea, a river or a pool, then right-click it
+  await OBR.contextMenu.create({
+    id: `${ID}/water-menu`,
+    icons: [{ icon: lightIcon("water"), label: "Water", filter: { roles: ["GM"], max: 1, every: [{ key: "type", value: "SHAPE", coordinator: "||" }, { key: "type", value: "CURVE" }] } }],
+    embed: { url: new URL("light.html?water=1", import.meta.url).href, height: 150 },
   });
   // anyone can give a token a light to carry: a torch, a lantern, a light spell, fire in hand...
   await OBR.contextMenu.create({

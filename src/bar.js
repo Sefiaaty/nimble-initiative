@@ -2,7 +2,7 @@
 // Players: talking light, raise hand, quick emotes, say (speech bubble), whisper to the GM, BRB, spend Inspiration.
 // GM: soft pings, nudge a player, quiet meter, "ask next", Inspiration, session recap stats.
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, STATE_KEY, TALK_CH, PARTY_KEY, partyOf, partyList, barLayout, directLink, isHero, getHeroImages, itemName } from "./common.js";
+import { ID, STATE_KEY, TALK_CH, PARTY_KEY, partyOf, partyList, barLayout, directLink, isHero, getHeroImages, itemName, slotFor } from "./common.js";
 import { CLASS_ICONS, SUBCLASS_ICONS } from "./classIcons.js";
 
 const EV_CH = `${ID}/party-ev`;     // broadcast: player state heartbeats and one-off events
@@ -495,16 +495,17 @@ async function loadTokens() {
   turnUrls = new Set();
   if (!(await OBR.scene.isReady())) return;
   const heroes = await getHeroImages();
+  const rmd = await OBR.room.getMetadata();
   const items = await OBR.scene.items.getItems((i) => i.layer === "CHARACTER");
   for (const it of items) {
-    const url = it.image && it.image.url;
-    if (url && isHero(it, heroes) && !tokens.has(url)) tokens.set(url, { id: it.id, name: itemName(it) });
+    const slot = slotFor(it.image && it.image.url, rmd);
+    if (slot && isHero(it, heroes) && !tokens.has(slot)) tokens.set(slot, { id: it.id, name: itemName(it) });
   }
   const s = (await OBR.scene.getMetadata())[STATE_KEY];
   const e = s && s.started && Array.isArray(s.entries) ? s.entries.find((x) => x.id === s.active) : null;
   if (e && e.kind === "hero") {
     const byId = new Map(items.map((i) => [i.id, i]));
-    for (const id of e.items) { const it = byId.get(id); if (it && it.image) turnUrls.add(it.image.url); }
+    for (const id of e.items) { const it = byId.get(id); const slot = it && slotFor(it.image && it.image.url, rmd); if (slot) turnUrls.add(slot); }
   }
 }
 

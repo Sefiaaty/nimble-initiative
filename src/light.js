@@ -1,6 +1,6 @@
 // Settings for the selected light(s), shown inside the right-click menu (GM only).
 import OBR from "@owlbear-rodeo/sdk";
-import { LIGHT_KEY, LIGHT_PRESETS, CARRY_KINDS, CARRY_LAST_KEY, lightPreset, lightOf } from "./common.js";
+import { LIGHT_KEY, LIGHT_PRESETS, CARRY_KINDS, CARRY_LAST_KEY, lightPreset, lightOf, WATER_KEY, WATER_STYLES, waterOf } from "./common.js";
 
 const app = document.getElementById("app");
 const carry = new URLSearchParams(location.search).has("carry"); // a token carrying a light, not a GM marker
@@ -73,10 +73,64 @@ app.addEventListener("input", (e) => {
   save({ [key]: v });
 });
 
+// ---------- water mode: the right-click menu on a shape or drawing ----------
+const waterMode = new URLSearchParams(location.search).has("water");
+let wid = null, wcur = null, wtimer = 0;
+function renderWater() {
+  if (!wid) { app.innerHTML = `<div class="top"><b>Select one shape</b></div>`; return; }
+  const btns = WATER_STYLES.map((x) => `<button class="wbtn ${wcur && wcur.k === x.k ? "on" : ""}" data-wk="${x.k}">${x.name.replace(/ \(.*\)/, "")}</button>`).join("");
+  if (!wcur) { app.innerHTML = `<div class="wrow">${btns}</div><div class="hint">Make this shape water. Players see the water move but not the shape.</div>`; return; }
+  const sl = (key, label) => `<div class="row"><label>${label}</label><input type="range" data-wv="${key}" min="0" max="3" step="0.05" value="${wcur[key]}"><output data-o="${key}">${Math.round(wcur[key] * 100)}%</output></div>`;
+  app.innerHTML = `<div class="wrow">${btns}</div>${sl("amp", "Strength")}${sl("speed", "Speed")}
+    <div class="top">${wcur.k === "river" ? `<label><input type="checkbox" data-wv="reverse" ${wcur.reverse ? "checked" : ""}>Flow the other way</label>` : "<span></span>"}<b></b><button class="wbtn" data-wk="">Not water</button></div>`;
+}
+async function saveWater(patch, mark) {
+  await OBR.scene.items.updateItems([wid], (items) => {
+    for (const it of items) {
+      if (patch === null) { // stop being water: show the shape again
+        delete it.metadata[WATER_KEY]; it.visible = true;
+        if (it.style) { it.style.fillOpacity = 0.25; it.style.strokeOpacity = 1; }
+        continue;
+      }
+      it.metadata[WATER_KEY] = { ...(it.metadata[WATER_KEY] || {}), ...patch };
+      if (mark) { // hidden from players, a faint blue outline for the GM
+        it.visible = false;
+        if (it.style) { it.style.fillColor = "#4fa3ff"; it.style.fillOpacity = 0.12; it.style.strokeColor = "#9fd0ff"; it.style.strokeOpacity = 0.8; }
+      }
+    }
+  });
+}
+if (waterMode) {
+  app.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-wk]");
+    if (!b || !wid) return;
+    e.stopImmediatePropagation();
+    if (!b.dataset.wk) { wcur = null; renderWater(); saveWater(null); return; }
+    const first = !wcur;
+    wcur = { ...(wcur || { amp: 1, speed: 1, reverse: false }), k: b.dataset.wk };
+    renderWater();
+    saveWater({ k: wcur.k }, first);
+  }, true);
+  app.addEventListener("input", (e) => {
+    const el = e.target, key = el.dataset.wv;
+    if (!key || !wcur) return;
+    e.stopImmediatePropagation();
+    const v = el.type === "checkbox" ? el.checked : Number(el.value);
+    wcur[key] = v;
+    const o = app.querySelector(`[data-o="${key}"]`); if (o) o.textContent = `${Math.round(v * 100)}%`;
+    clearTimeout(wtimer); wtimer = setTimeout(() => saveWater({ [key]: v }), 70);
+  }, true);
+}
+
 OBR.onReady(async () => {
   try { const t = await OBR.theme.getTheme(); document.documentElement.classList.toggle("light", t.mode === "LIGHT"); } catch (_) {}
   const sel = (await OBR.player.getSelection()) || [];
   const items = await OBR.scene.items.getItems(sel);
+  if (waterMode) {
+    const it = items.find((i) => i.type === "SHAPE" || i.type === "CURVE");
+    wid = it ? it.id : null; wcur = it ? waterOf(it) : null;
+    renderWater(); return;
+  }
   const lights = items.filter((i) => lightOf(i));
   if (carry) { ids = items.map((i) => i.id); cur = lights.length ? lightOf(lights[0]) : null; }
   else { ids = lights.map((i) => i.id); cur = lights.length ? lightOf(lights[0]) : null; }

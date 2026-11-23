@@ -240,3 +240,7 @@ button.cond:hover{text-decoration:line-through}
 .tod .todl span{position:absolute;transform:translateX(-50%);white-space:nowrap}
 .tod .todl span:first-child{transform:none}
 .tod .todl span:last-child{transform:translateX(-100%)}
+.tod .todnow{color:#ffcf4a;font-weight:600;margin-left:4px}
+.tod .todr{background:linear-gradient(90deg,#ffe9d2,#ffffff 20%,#fff3dc 36%,#ffc285 50%,#a887c2 64%,#5a6aa8 80%,#0b0b12)}
+.tod .fxrow{display:flex;gap:6px;margin-top:4px}
+.tod .fxrow button{flex:1}

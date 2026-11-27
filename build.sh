@@ -19,5 +19,5 @@ sed -i "s#src=\"background.js\"#src=\"background.js?v=$V\"#" docs/background.htm
 sed -i "s#src=\"bar.js\"#src=\"bar.js?v=$V\"#; s#href=\"bar.css\"#href=\"bar.css?v=$V\"#" docs/bar.html
 sed -i "s#src=\"mic.js\"#src=\"mic.js?v=$V\"#" docs/mic.html
 sed -i "s#src=\"bird.js\"#src=\"bird.js?v=$V\"#; s#href=\"bird.css\"#href=\"bird.css?v=$V\"#" docs/bird.html
-sed -i "s#src=\"scene.js\"#src=\"scene.js?v=$V\"#; s#href=\"scene.css\"#href=\"scene.css?v=$V\"#" docs/scene.html
+sed -i "s#src=\"scene.js\"#src=\"scene.js?v=$V\"#; s#href=\"scene.css\"#href=\"scene.css?v=$V\"#; s#href=\"bar.css\"#href=\"bar.css?v=$V\"#" docs/scene.html
 sed -i "s#src=\"light.js\"#src=\"light.js?v=$V\"#; s#href=\"light.css\"#href=\"light.css?v=$V\"#" docs/light.html

@@ -1,0 +1,4 @@
+Make Camp sounds
+- fire-loop.mp3 and fire-burst*.mp3: cut from "Nighttime Campfire" (Campfire component), Hubs Sound Pack by the Hubs Foundation, https://github.com/Hubs-Foundation/hubs-sound-pack, licensed CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/). Changes: louder, trimmed, looped.
+- stick-*.mp3: impactWood_light from Impact Sounds by Kenney (www.kenney.nl), CC0.
+- night.mp4: the GM's own scene video.

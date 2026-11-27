@@ -26,24 +26,28 @@ let lastPoke = 0;
 let snd = null;
 let drag = null; // { u, el, dx, dy }
 
-// ---------- sound: a crackling fire made on the fly, nothing to download ----------
+// ---------- sound: a real campfire recording, with real crackles and a stick on wood for pokes ----------
+// Fire: "Nighttime Campfire", Hubs Sound Pack (Hubs Foundation), CC BY 2.0. Stick: Kenney Impact Sounds, CC0.
+const AUDIO = new URL("camp/", import.meta.url).href;
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
 class FireSound {
   constructor() {
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.master = this.ctx.createGain(); this.master.gain.value = 0; this.master.connect(this.ctx.destination);
-    const len = this.ctx.sampleRate * 3, buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate), d = buf.getChannelData(0);
-    let v = 0;
-    for (let i = 0; i < len; i++) { v = (v + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = v * 3.2; }
-    this.roarSrc = this.ctx.createBufferSource(); this.roarSrc.buffer = buf; this.roarSrc.loop = true;
-    this.roarLp = this.ctx.createBiquadFilter(); this.roarLp.type = "lowpass"; this.roarLp.frequency.value = 520;
-    this.roar = this.ctx.createGain(); this.roar.gain.value = 0.5;
-    this.roarSrc.connect(this.roarLp).connect(this.roar).connect(this.master); this.roarSrc.start();
-    const n = this.ctx.sampleRate, wb = this.ctx.createBuffer(1, n, this.ctx.sampleRate), w = wb.getChannelData(0);
-    for (let i = 0; i < n; i++) w[i] = Math.random() * 2 - 1;
-    this.white = wb;
+    this.lp = this.ctx.createBiquadFilter(); this.lp.type = "lowpass"; this.lp.frequency.value = 12000;
+    this.bed = this.ctx.createGain(); this.bed.gain.value = 0.8;
+    this.lp.connect(this.bed).connect(this.master);
     this.heat = 1;
     this.enabled = false;
-    this.timer = setInterval(() => this.tick(), 40);
+    this.bufs = { loop: null, bursts: [], sticks: [] };
+    const load = (f) => fetch(AUDIO + f).then((r) => r.arrayBuffer()).then((d) => new Promise((ok, no) => this.ctx.decodeAudioData(d, ok, no)));
+    load("fire-loop.mp3").then((b) => {
+      this.bufs.loop = b;
+      const src = this.ctx.createBufferSource(); src.buffer = b; src.loop = true;
+      src.connect(this.lp); src.start(0, Math.random() * b.duration);
+    }).catch(() => {});
+    ["fire-burst1.mp3", "fire-burst2.mp3", "fire-burst3.mp3"].forEach((f) => load(f).then((b) => this.bufs.bursts.push(b)).catch(() => {}));
+    ["stick-000.mp3", "stick-001.mp3", "stick-002.mp3"].forEach((f) => load(f).then((b) => this.bufs.sticks.push(b)).catch(() => {}));
   }
   get on() { return this.ctx.state === "running" && this.enabled; }
   setOn(v) {
@@ -51,45 +55,35 @@ class FireSound {
     if (v) this.ctx.resume().catch(() => {});
     const t = this.ctx.currentTime;
     this.master.gain.cancelScheduledValues(t);
-    this.master.gain.setTargetAtTime(v ? 0.55 : 0, t, 0.4);
+    this.master.gain.setTargetAtTime(v ? 0.7 : 0, t, 0.4);
   }
-  crackle(loud = 1, at = 0) {
-    const t = this.ctx.currentTime + at;
-    const s = this.ctx.createBufferSource(); s.buffer = this.white; s.playbackRate.value = rand(0.6, 1.6);
-    const bp = this.ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = rand(1200, 4200); bp.Q.value = rand(0.7, 2.5);
-    const g = this.ctx.createGain(); const dur = rand(0.006, 0.03);
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(rand(0.08, 0.32) * loud, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    s.connect(bp).connect(g).connect(this.master); s.start(t, rand(0, 0.9), dur + 0.02);
+  play(buf, { at = 0, gain = 1, rate = 1 } = {}) {
+    if (!buf) return;
+    const s = this.ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = rate;
+    const g = this.ctx.createGain(); g.gain.value = gain;
+    s.connect(g).connect(this.master); s.start(this.ctx.currentTime + at);
   }
-  pop(at = 0) {
-    const t = this.ctx.currentTime + at;
-    const o = this.ctx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(rand(120, 220), t); o.frequency.exponentialRampToValueAtTime(50, t + 0.08);
-    const g = this.ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-    o.connect(g).connect(this.master); o.start(t); o.stop(t + 0.14);
-    this.crackle(1.6, at);
+  // the stick knocks a log, shoves it, and the fire answers with a burst of crackles
+  poke() {
+    if (!this.on) return;
+    this.play(pick(this.bufs.sticks), { gain: 0.55, rate: rand(0.72, 0.9) });
+    this.play(pick(this.bufs.sticks), { at: rand(0.1, 0.18), gain: 0.3, rate: rand(0.6, 0.8) });
+    this.play(pick(this.bufs.bursts), { at: 0.08, gain: 0.95, rate: rand(0.94, 1.06) });
   }
-  whoosh(len = 0.7, from = 260, to = 1400) {
-    const t = this.ctx.currentTime;
-    const s = this.ctx.createBufferSource(); s.buffer = this.white; s.loop = true;
-    const bp = this.ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.8;
-    bp.frequency.setValueAtTime(from, t); bp.frequency.exponentialRampToValueAtTime(to, t + len * 0.6);
-    const g = this.ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + len * 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    s.connect(bp).connect(g).connect(this.master); s.start(t); s.stop(t + len + 0.05);
+  flare() {
+    if (!this.on) return;
+    this.play(pick(this.bufs.bursts), { gain: 1, rate: rand(0.9, 1) });
+    this.play(pick(this.bufs.bursts), { at: 0.35, gain: 0.8, rate: rand(0.85, 0.95) });
   }
-  poke() { if (!this.on) return; this.whoosh(0.5, 300, 1100); for (let i = 0; i < 16; i++) (Math.random() < 0.25 ? this.pop(rand(0, 0.7)) : this.crackle(1.3, rand(0, 0.8))); }
+  // heat 1 is a steady fire: louder and brighter as it flares, quieter and duller as it gutters
   setHeat(h) {
     this.heat = h;
-    const t = this.ctx.currentTime;
-    this.roar.gain.setTargetAtTime(0.2 + 0.4 * Math.min(2, h), t, 0.3);
-    this.roarLp.frequency.setTargetAtTime(300 + 320 * Math.min(2, h), t, 0.3);
-  }
-  tick() {
-    if (!this.on) return;
-    const rate = 7 * Math.max(0.15, this.heat);
-    if (Math.random() < rate * 0.04) (Math.random() < 0.08 ? this.pop() : this.crackle());
+    const t = this.ctx.currentTime, k = Math.min(2.4, h);
+    this.bed.gain.setTargetAtTime(0.25 + 0.55 * k, t, 0.3);
+    this.lp.frequency.setTargetAtTime(Math.min(16000, 1200 + 10000 * k), t, 0.3);
   }
   fadeOut() { const g = this.master.gain, ct = this.ctx.currentTime; g.cancelScheduledValues(ct); g.setTargetAtTime(0, ct, 0.9); }
-  close() { clearInterval(this.timer); try { this.ctx.close(); } catch (_) {} }
+  close() { try { this.ctx.close(); } catch (_) {} }
 }
 const soundPref = () => { try { return localStorage.getItem(SOUND_PREF) !== "off"; } catch (_) { return true; } };
 const setSoundPref = (v) => { try { localStorage.setItem(SOUND_PREF, v ? "on" : "off"); } catch (_) {} };
@@ -301,10 +295,9 @@ function onCamp(d) {
     if (s) { s.card.classList.remove("poked"); void s.card.offsetWidth; s.card.classList.add("poked"); }
   } else if (d.k === "flare") {
     fire.heat = 2.4; fire.target = 1; burst(70, 0.9);
-    if (snd && snd.on) { snd.whoosh(1.1, 200, 1600); for (let i = 0; i < 12; i++) snd.pop(rand(0, 0.9)); }
+    if (snd) snd.flare();
   } else if (d.k === "dark") {
     fire.target = 0.3; fire.dark = 1; fire.until = now + 5000;
-    if (snd && snd.on) snd.whoosh(1.4, 900, 180);
   } else if (d.k === "dawn") {
     fire.dawn = 0.01; fire.target = 0.15; fire.until = 0;
     const t0 = performance.now();

@@ -24,22 +24,24 @@ body.pill{background:transparent}
 #stage .layer{filter:saturate(var(--todsat));transition:opacity .9s ease,filter .3s linear}
 #stage::after{content:"";position:absolute;inset:0;background:var(--tod);mix-blend-mode:multiply;pointer-events:none;z-index:5;transition:background .3s linear}
 
-/* Make Camp: the fire, the heroes around it, and the buttons */
+/* Make Camp: night over the scene, embers from below, the party cards in a ring (bar.css draws the cards) */
 #camp{position:fixed;inset:0;z-index:6;display:none}
 #camp.on{display:block}
-#camp canvas.fire{position:absolute;inset:0;z-index:2;cursor:default}
-#camp .ring{position:absolute;inset:0;z-index:1;--lit:.7}
-#camp .hero{position:absolute;transition:left 1.6s cubic-bezier(.3,.7,.2,1),top 1.6s cubic-bezier(.3,.7,.2,1),width 1.6s cubic-bezier(.3,.7,.2,1),height 1.6s cubic-bezier(.3,.7,.2,1),opacity 1.2s ease;pointer-events:none}
-#camp .hero.still{transition:none}
-#camp .hero img{position:absolute;left:50%;bottom:0;transform:translateX(-50%);max-width:100%;max-height:100%;
-  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20%,#000 70%,transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 20%,#000 70%,transparent 100%);
-  filter:brightness(var(--lit)) sepia(.35) saturate(1.1);transition:filter .25s ease}
-/* glows go on the wrapper, so they follow the faded picture and not its box */
-#camp .hero{filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}
-#camp .hero.talk{filter:drop-shadow(0 0 6px rgba(255,200,110,.9)) drop-shadow(0 0 18px rgba(255,160,60,.55))}
-#camp .hero.talk img{filter:brightness(calc(var(--lit) + .3)) sepia(.25) saturate(1.15)}
-#camp .hero.poked{animation:poked 1.4s ease-out}
-@keyframes poked{0%{filter:brightness(1.3) drop-shadow(0 0 14px rgba(255,170,70,1))}100%{filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}}
+#camp canvas.fire{position:absolute;inset:0;z-index:1;pointer-events:none}
+#camp .ring{position:absolute;inset:0;z-index:2}
+#camp .seat{position:absolute;transition:left 1.6s cubic-bezier(.3,.7,.2,1),top 1.6s cubic-bezier(.3,.7,.2,1),opacity 1.1s ease;touch-action:none;user-select:none}
+#camp .seat.still{transition:none}
+#camp .seat .card{cursor:default}
+#camp .seat.movable .card{cursor:grab}
+#camp .seat.dragging{transition:none;z-index:9}
+#camp .seat.dragging .card{cursor:grabbing;transform:scale(1.05)}
+#camp .seat .card.poked{animation:poked 1.4s ease-out}
+@keyframes poked{20%{filter:drop-shadow(0 0 10px rgba(255,150,50,.95)) drop-shadow(0 0 26px rgba(255,110,30,.6))}}
+/* cut-outs stand on the bottom of the screen on the bar; out in the camp their feet fade into the dark instead */
+body.cutouts #camp .cut{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 24%,#000 78%,transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 24%,#000 78%,transparent 100%)}
+body.cutouts #camp .seat .card.poked{animation:none}
+body.cutouts #camp .seat .card.poked .cut{animation:cutpoked 1.4s ease-out}
+@keyframes cutpoked{20%{filter:brightness(1.05) sepia(.35) saturate(1.3)}}
 #camp .ctl{position:absolute;right:18px;top:58px;z-index:5;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 #camp .ctl button{font:700 17px "Barlow Condensed",sans-serif;border:2px solid rgba(255,190,110,.55);border-radius:12px;padding:6px 14px;cursor:pointer;background:rgba(28,18,12,.82);color:#f6e2c4;box-shadow:0 2px 10px rgba(0,0,0,.5);transition:background .15s,transform .1s}
 #camp .ctl button:hover{background:rgba(70,38,18,.9)}
@@ -51,6 +53,6 @@ body.pill{background:transparent}
 #camp .ctl .lev:hover{opacity:1}
 #camp .ctl .lev .dawn{border-color:#ffb27a}
 /* the strips beside the main slice get the same night as the edges of the fire's light */
-body.camp #stage::before{content:"";position:absolute;inset:0;background:rgba(0,0,14,.72);z-index:4;pointer-events:none}
+body.camp #stage::before{content:"";position:absolute;inset:0;background:rgba(0,0,14,.55);z-index:4;pointer-events:none}
 body.camp.main-part #stage::before{display:none}
 body.camp #cap{display:none}

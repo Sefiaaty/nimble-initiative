@@ -31,7 +31,8 @@ html,body{margin:0;background:transparent;overflow:hidden;font-family:"Barlow Co
 .card:hover .gmtools{opacity:1}
 .gmtools button:disabled{opacity:.4}
 /* raised hand: speech bubble with "!" */
-.hand{position:absolute;right:-20px;top:-8px;z-index:7;width:calc(var(--w)*.3);height:calc(var(--w)*.26);min-width:30px;min-height:26px;padding:0;border:3px solid #17120e;border-radius:12px 12px 12px 3px;background:#fff6dc;color:#b3261e;font:900 calc(var(--w)*.2) "Barlow Condensed",sans-serif;line-height:1;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.5);animation:bob 1s ease-in-out infinite}
+.hand{position:absolute;right:-24px;top:-14px;z-index:7;width:calc(var(--w)*.42);height:calc(var(--w)*.36);min-width:42px;min-height:36px;padding:0;border:3px solid #17120e;border-radius:14px 14px 14px 4px;background:#d62b1f;color:#fff;font:900 calc(var(--w)*.3) "Barlow Condensed",sans-serif;line-height:1;cursor:pointer;text-shadow:0 2px 0 #17120e;box-shadow:0 0 0 0 rgba(214,43,31,.7),0 3px 8px rgba(0,0,0,.6);animation:bob 1s ease-in-out infinite,handpulse 1.4s ease-out infinite}
+@keyframes handpulse{0%{box-shadow:0 0 0 0 rgba(255,80,60,.75),0 3px 8px rgba(0,0,0,.6)}100%{box-shadow:0 0 0 16px rgba(255,80,60,0),0 3px 8px rgba(0,0,0,.6)}}
 @keyframes bob{50%{transform:translateY(-4px) rotate(-6deg)}}
 .mail{position:absolute;right:calc(var(--w)*.22);top:-8px;z-index:5;border:3px solid #17120e;border-radius:8px;background:#bb99ff;color:#17120e;font:700 calc(var(--w)*.1) "Barlow Condensed",sans-serif;padding:0 5px;cursor:pointer}
 .insp{position:absolute;left:4px;bottom:calc(var(--w)*.17);z-index:4;border:2px solid #17120e;border-radius:10px;background:#ffcf4a;color:#17120e;font:800 calc(var(--w)*.1) "Barlow Condensed",sans-serif;padding:0 6px;cursor:pointer;box-shadow:0 0 8px rgba(255,207,74,.8)}

@@ -31,13 +31,15 @@ html,body{margin:0;background:transparent;overflow:hidden;font-family:"Barlow Co
 .card:hover .gmtools{opacity:1}
 .gmtools button:disabled{opacity:.4}
 /* raised hand: speech bubble with "!" */
-.hand{position:absolute;right:-8px;top:-10px;z-index:5;width:calc(var(--w)*.26);height:calc(var(--w)*.22);min-width:26px;min-height:22px;border:3px solid #17120e;border-radius:12px 12px 12px 3px;background:#fff6dc;color:#b3261e;font:900 calc(var(--w)*.15) "Barlow Condensed",sans-serif;cursor:pointer;animation:bob 1s ease-in-out infinite}
+.hand{position:absolute;right:-20px;top:-8px;z-index:7;width:calc(var(--w)*.3);height:calc(var(--w)*.26);min-width:30px;min-height:26px;padding:0;border:3px solid #17120e;border-radius:12px 12px 12px 3px;background:#fff6dc;color:#b3261e;font:900 calc(var(--w)*.2) "Barlow Condensed",sans-serif;line-height:1;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.5);animation:bob 1s ease-in-out infinite}
 @keyframes bob{50%{transform:translateY(-4px) rotate(-6deg)}}
 .mail{position:absolute;right:calc(var(--w)*.22);top:-8px;z-index:5;border:3px solid #17120e;border-radius:8px;background:#bb99ff;color:#17120e;font:700 calc(var(--w)*.1) "Barlow Condensed",sans-serif;padding:0 5px;cursor:pointer}
 .insp{position:absolute;left:4px;bottom:calc(var(--w)*.17);z-index:4;border:2px solid #17120e;border-radius:10px;background:#ffcf4a;color:#17120e;font:800 calc(var(--w)*.1) "Barlow Condensed",sans-serif;padding:0 6px;cursor:pointer;box-shadow:0 0 8px rgba(255,207,74,.8)}
 .card:not(.mine) .insp{cursor:default}
 /* speech bubble above the card */
 .say{position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);width:max-content;max-width:calc(var(--w)*1.7);z-index:6;background:#fffaf0;color:#17120e;border:3px solid #17120e;border-radius:14px;padding:5px 9px;font:600 14px "Barlow Condensed",sans-serif;line-height:1.15;text-align:center;animation:pop .25s ease-out;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+/* shouting: a line that ends with "!" */
+.say.shout{font:800 19px "Barlow Condensed",sans-serif;line-height:1.05;letter-spacing:.02em;border-width:4px;padding:6px 11px}
 .say::after{content:"";position:absolute;left:50%;top:100%;margin-left:-8px;border:8px solid transparent;border-top-color:#17120e}
 @keyframes pop{from{transform:translateX(-50%) scale(.6);opacity:0}}
 /* quick reaction floats up */

@@ -14,10 +14,11 @@ export const TALK_CH = `${ID}/talk`;      // broadcast channel: who is talking
 export const SCENE_KEY = `${ID}/scene`;   // room metadata: the scene backdrop shown to everyone
 export const PEEK_KEY = `${ID}/peek`;     // GM's browser: hide the backdrop for me only
 export const SCENE_CH = "nimble-scene";
+export const CAMP_CH = `${ID}/camp`;      // broadcast: pokes and the GM's campfire levers
 export const BAR_HIDDEN_KEY = `${ID}/barHiddenForMe`; // this browser only: don't show the party bar here   // BroadcastChannel between this browser's extension frames
 export function sceneOf(md) {
   const s = (md && md[SCENE_KEY]) || {};
-  return { on: !!s.on && !!s.url, url: directLink(s.url || ""), kind: s.kind || "", title: s.title || "", sub: s.sub || "", at: s.at || 0 };
+  return { on: !!s.on && !!s.url, url: directLink(s.url || ""), kind: s.kind || "", title: s.title || "", sub: s.sub || "", at: s.at || 0, camp: !!s.camp };
 }
 // Turn share links into direct file links so pictures and videos load:
 // Dropbox (www.dropbox.com/...?dl=0) -> dl.dropboxusercontent.com, keeping the rlkey that opens the file;

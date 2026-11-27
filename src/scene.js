@@ -2,6 +2,8 @@
 // mode=full is the backdrop itself; mode=pill is the GM's small "scene is live" bar while peeking.
 import OBR from "@owlbear-rodeo/sdk";
 import { ID, SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, todOf, todLook } from "./common.js";
+import { startCamp, updateCamp, stopCamp, hookCamp } from "./camp.js";
+const campEl = document.getElementById("camp");
 
 const qs = new URLSearchParams(location.search);
 const mode = qs.get("mode") || "full";
@@ -58,9 +60,13 @@ function showCaption(sc) {
 function renderFull(md) {
   const sc = sceneOf(md);
   document.body.classList.toggle("out", !sc.on);
+  document.body.classList.toggle("camp", sc.on && sc.camp);
   if (!sc.on) return;
   showMedia(sc);
   showCaption(sc);
+  if (part === "main") {
+    if (sc.camp) startCamp(campEl, md).then(() => updateCamp(md)); else stopCamp();
+  }
 }
 function renderGm() {
   if (role !== "GM" || part !== "main") { gmBox.innerHTML = ""; return; }
@@ -97,10 +103,12 @@ if (part !== "main") { cap.style.display = "none"; gmBox.style.display = "none";
 OBR.onReady(async () => {
   role = await OBR.player.getRole();
   document.body.classList.add(mode === "pill" ? "pill" : "full");
+  if (part === "main") document.body.classList.add("main-part");
   const md = await OBR.room.getMetadata();
   if (mode === "pill") { renderPill(md); OBR.room.onMetadataChange(renderPill); return; }
   // if the backdrop gets closed some other way (Escape), the background reopens it while the scene is on
   if (part === "main") window.addEventListener("pagehide", () => bc.postMessage({ sceneClosed: true }));
+  hookCamp();
   renderGm();
   renderFull(md);
   OBR.room.onMetadataChange(renderFull);

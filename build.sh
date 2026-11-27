@@ -9,6 +9,7 @@ mkdir -p docs/portraits && cp public/portraits/* docs/portraits/ 2>/dev/null || 
 mkdir -p docs/conds && cp public/conds/* docs/conds/
 mkdir -p docs/bird && cp public/bird/* docs/bird/
 mkdir -p docs/lights && cp public/lights/* docs/lights/
+mkdir -p docs/camp && cp public/camp/* docs/camp/
 sed "s#\"/#\"$BASE/#g" public/manifest.json > docs/manifest.json
 touch docs/.nojekyll
 # Cache-bust: point the pages at this build's files, so a refresh never mixes old and new code.

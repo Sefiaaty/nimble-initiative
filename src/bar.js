@@ -2,7 +2,7 @@
 // Players: talking light, raise hand, quick emotes, say (speech bubble), whisper to the GM, BRB, spend Inspiration.
 // GM: soft pings, nudge a player, quiet meter, "ask next", Inspiration, session recap stats.
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, STATE_KEY, TALK_CH, PARTY_KEY, partyOf, partyList, barLayout, directLink, isHero, getHeroImages, itemName, slotFor } from "./common.js";
+import { ID, STATE_KEY, TALK_CH, PARTY_KEY, PEEK_KEY, sceneOf, partyOf, partyList, barLayout, directLink, isHero, getHeroImages, itemName, slotFor } from "./common.js";
 import { CLASS_ICONS, SUBCLASS_ICONS } from "./classIcons.js";
 
 const EV_CH = `${ID}/party-ev`;     // broadcast: player state heartbeats and one-off events
@@ -100,6 +100,10 @@ function render() {
   const L = barLayout(roomMd, viewW);
   const urls = L.urls;
   document.body.classList.toggle("cutouts", p.style === "cutouts");
+  const scn = sceneOf(roomMd);
+  let peeking = false;
+  try { peeking = isGM() && localStorage.getItem(PEEK_KEY) === "1"; } catch (_) {}
+  document.body.classList.toggle("camping", scn.on && scn.camp && !peeking);
   if (bar.style.gap !== L.gap + "px") bar.style.gap = L.gap + "px";
   // sink the pictures below the bottom edge so the screen edge cuts them
   const sink = Math.max(0, Math.min(80, p.offset)) + "px";
@@ -108,7 +112,7 @@ function render() {
   const now = Date.now();
   const gm = isGM();
   // who is "quiet": players with a working mic, here (not BRB), ranked by airtime
-  const eligible = urls.map((u) => (p.members[u] || {}).pid).filter((pid) => pid && live(pid) && live(pid).mic && !live(pid).brb);
+  const eligible = urls.filter((u) => !(p.members[u] || {}).absent).map((u) => (p.members[u] || {}).pid).filter((pid) => pid && live(pid) && live(pid).mic && !live(pid).brb);
   const longEnough = now - stats.since > 5 * 60000;
   const byAir = [...eligible].sort((a, b) => airtime(a) - airtime(b));
   const maxAir = Math.max(1, ...eligible.map(airtime));
@@ -124,9 +128,10 @@ function render() {
     const s = pid ? (mine ? { mic: mic.state === "on", ...own } : live(pid)) : null;
     const isTalking = pid && talking.has(pid) && now - talking.get(pid) < 2500;
     const brb = s && s.brb;
+    const absent = !!m.absent;
     const hand = s && s.hand;
     const quietFor = pid ? Math.floor((now - Math.max(lastTalk.get(pid) || started, micOnAt.get(pid) || 0)) / 60000) : 0;
-    const quietLong = gm && pid && s && s.mic && !brb && quietFor >= QUIET_MIN; // only when we can actually hear them
+    const quietLong = gm && pid && s && s.mic && !brb && !absent && quietFor >= QUIET_MIN; // only when we can actually hear them
     const em = pid && emotes.get(pid);
     const say = pid && says.get(pid);
     const wh = gm && pid && (whispers.get(pid) || []).length;
@@ -142,17 +147,19 @@ function render() {
         <button data-act="whisper" title="Whisper to the GM (only the GM sees it)">✉</button>
         <button class="${own.brb ? "on" : ""}" data-act="brb" title="Be right back">☕</button>
       </div>` : "";
-    const gmTools = gm && !pid ? `<div class="gmtools"><button data-act="frame" data-url="${esc(u)}" title="Move / zoom this picture">✥</button></div>`
+    const absBtn = `<button class="${absent ? "on" : ""}" data-act="absent" data-url="${esc(u)}" title="${absent ? "Mark as here again" : "Mark absent tonight (grayed out)"}">💤</button>`;
+    const gmTools = gm && !pid ? `<div class="gmtools"><button data-act="frame" data-url="${esc(u)}" title="Move / zoom this picture">✥</button>${absBtn}</div>`
       : gm && pid ? `<div class="gmtools">
         <button data-act="frame" data-url="${esc(u)}" title="Move / zoom this picture">✥</button>
         <button data-act="nudge" data-pid="${esc(pid)}" title="Turn to them: their card pulses and they hear a soft chime">🔔</button>
         <button data-act="moment" data-pid="${esc(pid)}" title="Had a moment (resets the quiet timer)">★</button>
         <button data-act="insp+" data-url="${esc(u)}" title="Give Inspiration">✦+</button>
         <button data-act="insp-" data-url="${esc(u)}" title="Take away Inspiration" ${insp ? "" : "disabled"}>✦−</button>
+        ${absBtn}
       </div>` : "";
     const meter = gm && pid && s && s.mic ? `<div class="air" title="Share of talking this session"><i style="width:${Math.round((airtime(pid) / maxAir) * 20) * 5}%"></i></div>`
       : gm && pid && !brb ? `<div class="nomic" title="Their talking light is off, so airtime isn't counted">no mic</div>` : "";
-    const cls = ["card", isTalking && "talk", turnUrls.has(u) && "turn", quietLong && "isquiet", quietSet.has(pid) && "lowair", brb && "brb", nudgeOn && "nudge", mine && "mine"].filter(Boolean).join(" ");
+    const cls = ["card", isTalking && "talk", turnUrls.has(u) && "turn", quietLong && "isquiet", quietSet.has(pid) && "lowair", brb && "brb", absent && "absent", nudgeOn && "nudge", mine && "mine"].filter(Boolean).join(" ");
     const w = L.widths[u];
     const sf = (m.frame && m.frame[p.style]) || {};
     const fr = draft && draft.u === u ? draft : { x: Number(sf.x) || 0, y: Number(sf.y) || 0, z: Number(sf.z) || 1 };
@@ -164,7 +171,7 @@ function render() {
       <div class="frame" title="${esc(name)}${m.pname ? " (" + esc(m.pname) + ")" : ""}"><div class="art" style="background-image:url('${esc(directLink(m.portrait) || u)}')"></div><img class="cut" src="${esc(directLink(m.portrait) || u)}" alt="" draggable="false">${icon}
         ${wh ? `<button class="mail" data-act="read" data-pid="${esc(pid)}" title="Whisper from ${esc(name)}">✉${wh > 1 ? wh : ""}</button>` : ""}
         ${insp ? `<button class="insp" data-act="spend" data-url="${esc(u)}" title="${mine ? "Spend Inspiration (click twice)" : "Inspiration"}">✦${insp > 1 ? insp : ""}</button>` : ""}
-        ${brb ? `<div class="brbtag">BRB</div>` : ""}
+        ${brb ? `<div class="brbtag">BRB</div>` : absent ? `<div class="brbtag abs">ABSENT</div>` : ""}
         ${quietLong ? `<div class="quiet">quiet ${quietFor}m</div>` : ""}
         ${tools}${gmTools}
       </div>
@@ -385,6 +392,15 @@ async function act(a, el) {
       m.frame = { ...(m.frame || {}), [p.style]: { x: Math.round(d.x * 10) / 10, y: Math.round(d.y * 10) / 10, z: Math.round(d.z * 100) / 100 } };
       await OBR.room.setMetadata({ [PARTY_KEY]: p });
       draft = null; openUi = null; render(); return;
+    }
+    case "absent": {
+      if (!isGM()) return;
+      const md = await OBR.room.getMetadata();
+      const p = partyOf(md);
+      const m = (p.members[el.dataset.url] ||= {});
+      m.absent = !m.absent;
+      await OBR.room.setMetadata({ [PARTY_KEY]: p });
+      return;
     }
     case "insp+": await setInsp(el.dataset.url, 1); return;
     case "insp-": await setInsp(el.dataset.url, -1); return;

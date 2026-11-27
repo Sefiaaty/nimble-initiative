@@ -7,7 +7,7 @@ import {
   parseNexusId, fetchMonster, findOfficial, loadLibrary, saveLibrary, addTokens, applyMonster, entryKindFor, rescaleLegendary,
   clean, tempOf, damage, giveTemp, jumpTo,
   PARTY_KEY, HEROES_KEY, HERO_FLAG, CLASSES, SUBCLASSES, partyOf, partyList, isHero, itemName,
-  SCENE_KEY, PEEK_KEY, SCENE_CH, sceneOf, isVideo, BAR_HIDDEN_KEY, directLink, TOD_KEY, todOf, todLook, TOD_NAMES,
+  SCENE_KEY, PEEK_KEY, SCENE_CH, CAMP_CH, sceneOf, isVideo, BAR_HIDDEN_KEY, directLink, TOD_KEY, todOf, todLook, TOD_NAMES,
   CONDITIONS, condDef, DURATIONS, addCond, removeCond, condsOnCombatEnd, condTimer, setUses, resetUses, COND_ORDER, slotFor, FX_CH,
 } from "./common.js";
 
@@ -122,7 +122,8 @@ function renderScene() {
       <div class="muted small">Tints the map and tokens for everyone. Each map keeps its own time. Cave is pitch black except around lights.</div>
       <div class="fxrow"><button data-act="scflash" title="A lightning flash on everyone's screen">⚡ Lightning</button><button data-act="scrumble" title="Shake the map for everyone for a second">Rumble</button></div></div>`;
   return `<div class="scene">${todBox}
-    ${live.on ? `<div class="slive"><b>Live:</b> ${esc(live.title || "untitled scene")}
+    <div class="srow camprow"><button class="sgo" data-act="sccamp" title="Fade to night: a campfire with the party sitting around it">🔥 Make Camp</button>${live.on && live.camp ? `<button data-act="scdawn" title="Morning comes: the camp fades back to the map">🌅 Dawn</button>` : ""}</div>
+    ${live.on ? `<div class="slive"><b>Live:</b> ${esc(live.title || (live.camp ? "Camp" : "untitled scene"))}
       <button data-act="scpeek" title="Hide the scene for you only, so you can work on the map">${scenePeek ? "Back to scene" : "Peek"}</button>
       <button class="send" data-act="scend" title="Fade the scene out for everyone">End scene</button></div>` : ""}
     <div class="sprev">${d.url ? mediaTag(d.url, d.kind, "sp") : `<div class="sp empty">Pick a picture or paste a link</div>`}
@@ -143,6 +144,11 @@ async function showScene(x) {
   await OBR.room.setMetadata({ [SCENE_KEY]: { on: true, url: directLink(x.url), kind: x.kind || "", title: x.title || "", sub: x.sub || "", at: Date.now() } });
 }
 async function handleScene(act, el) {
+  if (act === "sccamp") {
+    await OBR.room.setMetadata({ [SCENE_KEY]: { on: true, url: new URL("camp/night.mp4", import.meta.url).href, kind: "video", title: "", sub: "", camp: true, at: Date.now() } });
+    setScenePeek(false); return;
+  }
+  if (act === "scdawn") { OBR.broadcast.sendMessage(CAMP_CH, { k: "dawn", at: Date.now() }, { destination: "ALL" }); return; }
   if (act === "scflash" || act === "scrumble") { OBR.broadcast.sendMessage(FX_CH, { k: act === "scflash" ? "flash" : "rumble" }, { destination: "ALL" }); return; }
   const d = sceneDraft || (sceneDraft = { url: "", kind: "", title: "", sub: "" });
   const presets = loadPresets();

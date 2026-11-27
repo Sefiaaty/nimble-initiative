@@ -23,3 +23,34 @@ body.pill{background:transparent}
 #stage{--tod:rgb(255,255,255);--todsat:1}
 #stage .layer{filter:saturate(var(--todsat));transition:opacity .9s ease,filter .3s linear}
 #stage::after{content:"";position:absolute;inset:0;background:var(--tod);mix-blend-mode:multiply;pointer-events:none;z-index:5;transition:background .3s linear}
+
+/* Make Camp: the fire, the heroes around it, and the buttons */
+#camp{position:fixed;inset:0;z-index:6;display:none}
+#camp.on{display:block}
+#camp canvas.fire{position:absolute;inset:0;z-index:2;cursor:default}
+#camp .ring{position:absolute;inset:0;z-index:1;--lit:.7}
+#camp .hero{position:absolute;transition:left 1.6s cubic-bezier(.3,.7,.2,1),top 1.6s cubic-bezier(.3,.7,.2,1),width 1.6s cubic-bezier(.3,.7,.2,1),height 1.6s cubic-bezier(.3,.7,.2,1),opacity 1.2s ease;pointer-events:none}
+#camp .hero.still{transition:none}
+#camp .hero img{position:absolute;left:50%;bottom:0;transform:translateX(-50%);max-width:100%;max-height:100%;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 20%,#000 70%,transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 20%,#000 70%,transparent 100%);
+  filter:brightness(var(--lit)) sepia(.35) saturate(1.1);transition:filter .25s ease}
+/* glows go on the wrapper, so they follow the faded picture and not its box */
+#camp .hero{filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}
+#camp .hero.talk{filter:drop-shadow(0 0 6px rgba(255,200,110,.9)) drop-shadow(0 0 18px rgba(255,160,60,.55))}
+#camp .hero.talk img{filter:brightness(calc(var(--lit) + .3)) sepia(.25) saturate(1.15)}
+#camp .hero.poked{animation:poked 1.4s ease-out}
+@keyframes poked{0%{filter:brightness(1.3) drop-shadow(0 0 14px rgba(255,170,70,1))}100%{filter:drop-shadow(0 6px 10px rgba(0,0,0,.55))}}
+#camp .ctl{position:absolute;right:18px;top:58px;z-index:5;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+#camp .ctl button{font:700 17px "Barlow Condensed",sans-serif;border:2px solid rgba(255,190,110,.55);border-radius:12px;padding:6px 14px;cursor:pointer;background:rgba(28,18,12,.82);color:#f6e2c4;box-shadow:0 2px 10px rgba(0,0,0,.5);transition:background .15s,transform .1s}
+#camp .ctl button:hover{background:rgba(70,38,18,.9)}
+#camp .ctl button:active{transform:scale(.96)}
+#camp .ctl .poke{font-size:20px;padding:8px 18px}
+#camp .ctl .snd{width:44px;padding:6px 0}
+#camp .ctl .snd.on{border-color:#ffcf4a}
+#camp .ctl .lev{display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-top:10px;opacity:.55;transition:opacity .2s}
+#camp .ctl .lev:hover{opacity:1}
+#camp .ctl .lev .dawn{border-color:#ffb27a}
+/* the strips beside the main slice get the same night as the edges of the fire's light */
+body.camp #stage::before{content:"";position:absolute;inset:0;background:rgba(0,0,14,.72);z-index:4;pointer-events:none}
+body.camp.main-part #stage::before{display:none}
+body.camp #cap{display:none}

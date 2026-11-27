@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve, buildEffect, buildImage, buildLabel, buildShape } from "@owlbear-rodeo/sdk";
 import {
-  ID, TALK_CH, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, WATER_KEY, WATER_MAX, WATER_STYLES, waterOf, FX_CH, isLightMarker, CARRY_KINDS, CARRY_LAST_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
+  ID, TALK_CH, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, CAMP_CH, SCENE_KEY, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, WATER_KEY, WATER_MAX, WATER_STYLES, waterOf, FX_CH, isLightMarker, CARRY_KINDS, CARRY_LAST_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
   getHeroImages, heroLinks, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -599,7 +599,14 @@ ${sum}  I *= glow;
   async function syncBar() {
     const md = await OBR.room.getMetadata();
     const n = partyList(md).length;
-    const show = partyOf(md).show && n > 0 && !barHidden;
+    // while the party sits around the campfire the bar steps aside (after its own fade-out), unless the GM is peeking
+    const sc0 = sceneOf(md);
+    let peeking = false;
+    try { peeking = (await OBR.player.getRole()) === "GM" && localStorage.getItem(PEEK_KEY) === "1"; } catch (_) {}
+    const campLeft = sc0.on && sc0.camp && !peeking ? 1300 - (Date.now() - sc0.at) : -1;
+    if (campLeft > 0) setTimeout(runBar, campLeft + 50);
+    const camping = sc0.on && sc0.camp && !peeking && campLeft <= 0;
+    const show = partyOf(md).show && n > 0 && !barHidden && !camping;
     const vw = await OBR.viewport.getWidth();
     const vh = await OBR.viewport.getHeight();
     const L = barLayout(md, vw);
@@ -730,6 +737,16 @@ ${sum}  I *= glow;
   // Everything below runs for the GM only, so there is one writer.
   const role = await OBR.player.getRole();
   if (role !== "GM") return;
+
+  // Dawn at camp: let the morning play out, then end the camp scene
+  OBR.broadcast.onMessage(CAMP_CH, async (e) => {
+    if (!e.data || e.data.k !== "dawn") return;
+    setTimeout(async () => {
+      const md = await OBR.room.getMetadata();
+      const live = md[SCENE_KEY] || {};
+      if (live.on && live.camp) await OBR.room.setMetadata({ [SCENE_KEY]: { ...live, on: false, camp: false, at: Date.now() } });
+    }, 3400);
+  });
 
   let lastPos = new Map();
   let busy = Promise.resolve();

@@ -47,8 +47,6 @@ body.cutouts #camp .seat .card.poked .cut{animation:cutpoked 1.4s ease-out}
 #camp .ctl button:hover{background:rgba(70,38,18,.9)}
 #camp .ctl button:active{transform:scale(.96)}
 #camp .ctl .poke{font-size:20px;padding:8px 18px}
-#camp .ctl .snd{width:44px;padding:6px 0}
-#camp .ctl .snd.on{border-color:#ffcf4a}
 #camp .ctl .lev{display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-top:10px;opacity:.55;transition:opacity .2s}
 #camp .ctl .lev:hover{opacity:1}
 #camp .ctl .lev .dawn{border-color:#ffb27a}

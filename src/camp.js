@@ -1,12 +1,11 @@
 // Make Camp: night falls over the scene backdrop, the party cards glide up from the bar into a ring,
 // and the fire is heard rather than seen. Runs inside the main slice of the scene backdrop (scene.js).
-// Everyone: poke the fire (it crackles, embers drift up from the bottom of the screen), sound on/off.
+// Everyone: poke the fire (embers drift up from the bottom of the screen). No sound.
 // GM: drag the cards anywhere; something in the dark, flare, dawn. Positions only last while the camp does.
 import OBR from "@owlbear-rodeo/sdk";
 import { TALK_CH, CAMP_CH, SCENE_KEY, partyOf, barLayout, directLink } from "./common.js";
 import { CLASS_ICONS, SUBCLASS_ICONS } from "./classIcons.js";
 
-const SOUND_PREF = "nimble-camp-sound";
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -16,81 +15,14 @@ let md = {};
 let W = 0, H = 0, S = 1;
 let raf = 0, last = 0;
 let running = false;
-// heat 1 is a steady fire, more is a flare, less is guttering; it drives the light, the embers and the sound
+// heat 1 is a steady fire, more is a flare, less is guttering; it drives the light and the embers
 const fire = { heat: 0.2, target: 1, dark: 0, dawn: 0, until: 0 };
 const embers = [];
 let emberSprite = null;
 const seats = new Map(); // url -> { el, card, pid, home, spot }
 const talking = new Map(); // pid -> last time heard
 let lastPoke = 0;
-let snd = null;
 let drag = null; // { u, el, dx, dy }
-
-// ---------- sound: a real campfire recording, with real crackles and a stick on wood for pokes ----------
-// Fire: "Nighttime Campfire", Hubs Sound Pack (Hubs Foundation), CC BY 2.0. Stick: Kenney Impact Sounds, CC0.
-const AUDIO = new URL("camp/", import.meta.url).href;
-const pick = (a) => a[Math.floor(Math.random() * a.length)];
-class FireSound {
-  constructor() {
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    this.master = this.ctx.createGain(); this.master.gain.value = 0; this.master.connect(this.ctx.destination);
-    this.lp = this.ctx.createBiquadFilter(); this.lp.type = "lowpass"; this.lp.frequency.value = 12000;
-    this.bed = this.ctx.createGain(); this.bed.gain.value = 0.8;
-    this.lp.connect(this.bed).connect(this.master);
-    this.heat = 1;
-    this.enabled = false;
-    this.bufs = { loop: null, bursts: [], sticks: [] };
-    const load = (f) => fetch(AUDIO + f).then((r) => r.arrayBuffer()).then((d) => new Promise((ok, no) => this.ctx.decodeAudioData(d, ok, no)));
-    load("fire-loop.mp3").then((b) => {
-      this.bufs.loop = b;
-      const src = this.ctx.createBufferSource(); src.buffer = b; src.loop = true;
-      src.connect(this.lp); src.start(0, Math.random() * b.duration);
-    }).catch(() => {});
-    ["fire-burst1.mp3", "fire-burst2.mp3", "fire-burst3.mp3"].forEach((f) => load(f).then((b) => this.bufs.bursts.push(b)).catch(() => {}));
-    ["stick-000.mp3", "stick-001.mp3", "stick-002.mp3"].forEach((f) => load(f).then((b) => this.bufs.sticks.push(b)).catch(() => {}));
-  }
-  get on() { return this.ctx.state === "running" && this.enabled; }
-  setOn(v) {
-    this.enabled = v;
-    if (v) this.ctx.resume().catch(() => {});
-    const t = this.ctx.currentTime;
-    this.master.gain.cancelScheduledValues(t);
-    this.master.gain.setTargetAtTime(v ? 0.7 : 0, t, 0.4);
-  }
-  play(buf, { at = 0, gain = 1, rate = 1 } = {}) {
-    if (!buf) return;
-    const s = this.ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = rate;
-    const g = this.ctx.createGain(); g.gain.value = gain;
-    s.connect(g).connect(this.master); s.start(this.ctx.currentTime + at);
-  }
-  // the stick knocks a log, shoves it, and the fire answers with a burst of crackles
-  poke() {
-    if (!this.on) return;
-    this.play(pick(this.bufs.sticks), { gain: 0.55, rate: rand(0.72, 0.9) });
-    this.play(pick(this.bufs.sticks), { at: rand(0.1, 0.18), gain: 0.3, rate: rand(0.6, 0.8) });
-    this.play(pick(this.bufs.bursts), { at: 0.08, gain: 0.95, rate: rand(0.94, 1.06) });
-  }
-  flare() {
-    if (!this.on) return;
-    this.play(pick(this.bufs.bursts), { gain: 1, rate: rand(0.9, 1) });
-    this.play(pick(this.bufs.bursts), { at: 0.35, gain: 0.8, rate: rand(0.85, 0.95) });
-  }
-  // heat 1 is a steady fire: louder and brighter as it flares, quieter and duller as it gutters
-  setHeat(h) {
-    this.heat = h;
-    const t = this.ctx.currentTime, k = Math.min(2.4, h);
-    this.bed.gain.setTargetAtTime(0.25 + 0.55 * k, t, 0.3);
-    this.lp.frequency.setTargetAtTime(Math.min(16000, 1200 + 10000 * k), t, 0.3);
-  }
-  fadeOut() { const g = this.master.gain, ct = this.ctx.currentTime; g.cancelScheduledValues(ct); g.setTargetAtTime(0, ct, 0.9); }
-  close() { try { this.ctx.close(); } catch (_) {} }
-}
-const soundPref = () => { try { return localStorage.getItem(SOUND_PREF) !== "off"; } catch (_) { return true; } };
-const setSoundPref = (v) => { try { localStorage.setItem(SOUND_PREF, v ? "on" : "off"); } catch (_) {} };
-function ensureSound() {
-  if (!snd) { try { snd = new FireSound(); } catch (_) { return null; } }
-  return snd;
-}
 
 // ---------- layout ----------
 function measure() {
@@ -233,7 +165,6 @@ function burst(n, wide = 0.6) {
 function step(dt, now) {
   if (fire.until && now > fire.until) { fire.until = 0; fire.target = fire.dawn ? 0.15 : 1; fire.dark = 0; }
   fire.heat += (fire.target - fire.heat) * Math.min(1, dt * (fire.heat < fire.target ? 1.3 : 0.9));
-  if (snd) snd.setHeat(fire.heat);
   if (Math.random() < 0.7 * fire.heat * dt) burst(1, 0.5); // a slow trickle while the fire burns
   for (const e of embers) { e.age += dt; e.vy *= 0.995; e.x += (e.vx + Math.sin(e.age * 2.4 + e.sway) * 34 * S) * dt; e.y += e.vy * dt; }
   for (let i = embers.length - 1; i >= 0; i--) if (embers[i].age > embers[i].life || embers[i].y < -20) embers.splice(i, 1);
@@ -290,12 +221,10 @@ function onCamp(d) {
   if (d.k === "poke") {
     burst(34);
     fire.heat = Math.min(2.4, fire.heat + 0.5);
-    if (snd) snd.poke();
     const s = [...seats.values()].find((x) => x.pid && x.pid === d.pid);
     if (s) { s.card.classList.remove("poked"); void s.card.offsetWidth; s.card.classList.add("poked"); }
   } else if (d.k === "flare") {
     fire.heat = 2.4; fire.target = 1; burst(70, 0.9);
-    if (snd) snd.flare();
   } else if (d.k === "dark") {
     fire.target = 0.3; fire.dark = 1; fire.until = now + 5000;
   } else if (d.k === "dawn") {
@@ -304,7 +233,6 @@ function onCamp(d) {
     const rise = () => { if (!running) return; fire.dawn = Math.min(1, (performance.now() - t0) / 2500); if (fire.dawn < 1) requestAnimationFrame(rise); };
     rise();
     setTimeout(goHome, 900);
-    if (snd) snd.fadeOut();
   }
 }
 
@@ -314,16 +242,13 @@ function poke() {
   const now = Date.now();
   if (now - lastPoke < 1200) return;
   lastPoke = now;
-  if (soundPref()) { const s = ensureSound(); if (s && !s.enabled) s.setOn(true); }
   send("poke");
   renderCtl();
 }
 
 function renderCtl() {
-  const on = snd && snd.on;
   const gm = me.role === "GM";
   ctl.innerHTML = `<button class="poke" data-c="poke" title="Poke the fire with a stick">🪵 Poke the fire</button>
-    <button class="snd ${on ? "on" : ""}" data-c="sound" title="${on ? "Mute the fire" : "Hear the fire"}">${on ? "🔊" : "🔇"}</button>
     ${gm ? `<div class="lev"><button data-c="dark" title="The fire gutters and the dark closes in">🌑 Something in the dark</button><button data-c="flare" title="The fire roars up">🔥 Flare</button><button class="dawn" data-c="dawn" title="Morning comes: the camp fades back to the map">🌅 Dawn</button></div>` : ""}`;
 }
 
@@ -349,7 +274,6 @@ export async function startCamp(container, roomMd) {
   embers.length = 0;
   buildCards(true);
   renderCtl();
-  if (soundPref()) { const s = ensureSound(); if (s) { s.setOn(true); renderCtl(); } }
   ring.addEventListener("pointerdown", onDown);
   ring.addEventListener("pointermove", onMove);
   ring.addEventListener("pointerup", onUp);
@@ -363,12 +287,9 @@ export async function startCamp(container, roomMd) {
 function onClick(e) {
   if (!running) return;
   const b = e.target.closest("[data-c]");
-  // sound needs a click on this page first; any click turns it on if the player wants it
-  if (soundPref() && snd && !snd.on && (!b || b.dataset.c !== "sound")) { snd.setOn(true); renderCtl(); }
   if (!b) return;
   const c = b.dataset.c;
   if (c === "poke") poke();
-  else if (c === "sound") { const s = ensureSound(); const v = !(s && s.on); setSoundPref(v); if (s) s.setOn(v); setTimeout(renderCtl, 60); }
   else if (me.role === "GM" && (c === "dark" || c === "flare" || c === "dawn")) send(c);
 }
 
@@ -378,7 +299,6 @@ export function stopCamp() {
   if (!running) return;
   running = false;
   cancelAnimationFrame(raf);
-  if (snd) { snd.close(); snd = null; }
   seats.clear();
   drag = null;
   if (root) { root.innerHTML = ""; root.classList.remove("on"); }

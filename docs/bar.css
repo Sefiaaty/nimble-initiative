@@ -39,7 +39,11 @@ html,body{margin:0;background:transparent;overflow:hidden;font-family:"Barlow Co
 /* speech bubble above the card */
 .say{position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);width:max-content;max-width:calc(var(--w)*1.7);z-index:6;background:#fffaf0;color:#17120e;border:3px solid #17120e;border-radius:14px;padding:5px 9px;font:600 14px "Barlow Condensed",sans-serif;line-height:1.15;text-align:center;animation:pop .25s ease-out;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 /* shouting: a line that ends with "!" */
-.say.shout{font:800 19px "Barlow Condensed",sans-serif;line-height:1.05;letter-spacing:.02em;border-width:4px;padding:6px 11px}
+.say.shout{font:italic 900 20px "Barlow Condensed",sans-serif;line-height:1;letter-spacing:.03em;text-transform:uppercase;color:#17120e;background:none;border:0;padding:18px 30px;overflow:visible;display:block;max-width:calc(var(--w)*1.5);bottom:calc(100% + 4px);animation:shout .5s ease-out both}
+.say.shout::before,.say.shout::after{content:"";position:absolute;margin:0;border:0;clip-path:polygon(50.0% 0.0%,59.8% 10.2%,72.7% 6.8%,77.2% 19.3%,89.7% 22.6%,88.3% 35.5%,99.6% 44.0%,90.7% 54.9%,98.4% 68.4%,83.7% 73.3%,84.0% 88.3%,69.1% 86.3%,62.5% 100.0%,50.0% 91.0%,37.6% 100.0%,30.9% 86.3%,15.3% 89.2%,16.3% 73.3%,2.1% 68.2%,9.3% 54.9%,2.7% 44.3%,11.7% 35.5%,9.3% 21.9%,22.8% 19.3%,27.6% 7.3%,40.2% 10.2%)}
+.say.shout::before{inset:-5px -7px;background:#17120e;z-index:-2}
+.say.shout::after{inset:0;background:#fff3c4;z-index:-1}
+@keyframes shout{0%{transform:translateX(-50%) scale(.4) rotate(-8deg);opacity:0}35%{transform:translateX(-50%) scale(1.15) rotate(3deg);opacity:1}50%{transform:translateX(-50%) scale(1) rotate(-3deg)}65%{transform:translateX(-50%) rotate(2deg)}80%{transform:translateX(-50%) rotate(-1deg)}100%{transform:translateX(-50%) rotate(-2deg)}}
 .say::after{content:"";position:absolute;left:50%;top:100%;margin-left:-8px;border:8px solid transparent;border-top-color:#17120e}
 @keyframes pop{from{transform:translateX(-50%) scale(.6);opacity:0}}
 /* quick reaction floats up */

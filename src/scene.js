@@ -29,12 +29,44 @@ async function endScene() {
   await OBR.room.setMetadata({ [SCENE_KEY]: { ...sc, on: false, at: Date.now() } });
 }
 
+// Browsers sometimes pause a looping video and never start it again: the tab was in the
+// background, the network hiccuped, or the loop point stuck. Check every couple of seconds and
+// nudge it back to life: play() if it's paused, jump back to the start if it's stuck at the end,
+// and reload it if it hasn't moved for a while.
+let liveVideo = null, lastTime = -1, stuckFor = 0;
+function keepPlaying() {
+  const v = liveVideo;
+  if (!v || !v.isConnected || document.hidden || document.body.classList.contains("out")) { stuckFor = 0; return; }
+  if (v.readyState < 2 && v.networkState === 3) { reloadVideo(v); return; } // NETWORK_NO_SOURCE
+  if (v.paused || v.ended) { v.play().catch(() => {}); }
+  if (v.duration && v.currentTime >= v.duration - 0.15) { v.currentTime = 0; v.play().catch(() => {}); }
+  if (Math.abs(v.currentTime - lastTime) < 0.01) stuckFor += 2; else stuckFor = 0;
+  lastTime = v.currentTime;
+  if (stuckFor >= 8) reloadVideo(v);
+}
+function reloadVideo(v) {
+  stuckFor = 0;
+  const t = v.currentTime || 0;
+  const src = v.src;
+  v.removeAttribute("src"); v.load();
+  v.src = src;
+  v.addEventListener("loadeddata", () => { try { v.currentTime = t; } catch (_) {} v.play().catch(() => {}); }, { once: true });
+}
+setInterval(keepPlaying, 2000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && liveVideo) liveVideo.play().catch(() => {}); });
+
 function showMedia(sc) {
   if (sc.url === shown.url) return;
   shown.url = sc.url;
   const el = isVideo(sc.url, sc.kind) ? document.createElement("video") : document.createElement("img");
   el.className = "layer";
-  if (el.tagName === "VIDEO") { el.autoplay = true; el.loop = true; el.muted = true; el.playsInline = true; }
+  if (el.tagName === "VIDEO") {
+    el.autoplay = true; el.loop = true; el.muted = true; el.playsInline = true; el.preload = "auto";
+    liveVideo = el; lastTime = -1; stuckFor = 0;
+    // a stall or a pause nobody asked for: try again straight away
+    el.addEventListener("pause", () => { if (!document.hidden) setTimeout(() => el.play().catch(() => {}), 300); });
+    el.addEventListener("stalled", () => el.play().catch(() => {}));
+  } else liveVideo = null;
   const reveal = () => {
     el.classList.add("in");
     // drop the old picture once the new one has faded in

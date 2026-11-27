@@ -147,7 +147,7 @@ function render() {
         <button data-act="whisper" title="Whisper to the GM (only the GM sees it)">✉</button>
         <button class="${own.brb ? "on" : ""}" data-act="brb" title="Be right back">☕</button>
       </div>` : "";
-    const absBtn = `<button class="${absent ? "on" : ""}" data-act="absent" data-url="${esc(u)}" title="${absent ? "Mark as here again" : "Mark absent tonight (grayed out)"}">💤</button>`;
+    const absBtn = `<button class="${absent ? "on" : ""}" data-act="absent" data-url="${esc(u)}" title="${absent ? "Back to color" : "Gray out (absent, dead...)"}">💤</button>`;
     const gmTools = gm && !pid ? `<div class="gmtools"><button data-act="frame" data-url="${esc(u)}" title="Move / zoom this picture">✥</button>${absBtn}</div>`
       : gm && pid ? `<div class="gmtools">
         <button data-act="frame" data-url="${esc(u)}" title="Move / zoom this picture">✥</button>
@@ -171,7 +171,7 @@ function render() {
       <div class="frame" title="${esc(name)}${m.pname ? " (" + esc(m.pname) + ")" : ""}"><div class="art" style="background-image:url('${esc(directLink(m.portrait) || u)}')"></div><img class="cut" src="${esc(directLink(m.portrait) || u)}" alt="" draggable="false">${icon}
         ${wh ? `<button class="mail" data-act="read" data-pid="${esc(pid)}" title="Whisper from ${esc(name)}">✉${wh > 1 ? wh : ""}</button>` : ""}
         ${insp ? `<button class="insp" data-act="spend" data-url="${esc(u)}" title="${mine ? "Spend Inspiration (click twice)" : "Inspiration"}">✦${insp > 1 ? insp : ""}</button>` : ""}
-        ${brb ? `<div class="brbtag">BRB</div>` : absent ? `<div class="brbtag abs">ABSENT</div>` : ""}
+        ${brb ? `<div class="brbtag">BRB</div>` : ""}
         ${quietLong ? `<div class="quiet">quiet ${quietFor}m</div>` : ""}
         ${tools}${gmTools}
       </div>

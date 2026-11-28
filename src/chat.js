@@ -46,6 +46,9 @@ form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) return;
+  // "/gif some words" searches GIFs for those words, like Discord
+  const slash = text.match(/^\/gif\s*(.*)$/i);
+  if (slash) { input.value = ""; searchFor(slash[1]); return; }
   const gif = gifFrom(text);
   if (gif) send({ k: "gif", url: gif.url, kind: gif.kind });
   else send({ k: "say", text: text.slice(0, 140) });
@@ -57,12 +60,22 @@ document.getElementById("close").addEventListener("click", () => bc.postMessage(
 // GIPHY's free key allows about 100 searches an hour for everyone together, so it only searches on Enter,
 // and the trending list is kept for 10 minutes.
 const TRENDING = "nimble-giphy-trending";
-function showPicker(open) {
+function showPicker(open, words) {
   picker.hidden = !open;
   gifBtn.classList.toggle("on", open);
-  if (open) { renderFoot(); if (giphyKey) { trending(); ginput.focus(); } else noKey(); }
+  if (!open) return;
+  renderFoot();
+  if (!giphyKey) { noKey(); return; }
+  ginput.focus();
+  if (words) { ginput.value = words; gsearch.requestSubmit(); } else trending(); // searching right away skips trending (saves a call)
 }
-gifBtn.addEventListener("click", () => showPicker(picker.hidden));
+// GIF button: with words in the chat box it searches for them, otherwise it opens the picker
+gifBtn.addEventListener("click", () => {
+  const words = input.value.trim();
+  if (words && !gifFrom(words)) { input.value = ""; searchFor(words); return; }
+  showPicker(picker.hidden);
+});
+function searchFor(words) { showPicker(true, words); }
 document.getElementById("pclose").addEventListener("click", () => showPicker(false));
 function noKey() {
   grid.innerHTML = me.role === "GM"

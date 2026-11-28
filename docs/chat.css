@@ -1,6 +1,6 @@
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:"Barlow Condensed",system-ui,sans-serif}
 #chat{position:absolute;inset:0;display:flex;flex-direction:column;background:rgba(23,18,14,.9);border:2px solid #e9dfc8;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.5);overflow:hidden;color:#efe6d2}
-header{display:flex;align-items:center;padding:4px 6px 4px 12px;background:#2a231c;border-bottom:2px solid #17120e}
+header{display:flex;align-items:center;padding:4px 6px 4px 12px;background:#2a231c;border-bottom:2px solid #17120e;cursor:grab;user-select:none;touch-action:none}
 header .t{flex:1;font:20px "Pirata One",serif;letter-spacing:.02em}
 button{font:700 14px "Barlow Condensed",sans-serif;border:0;border-radius:9px;cursor:pointer;background:#3a3027;color:#efe6d2;padding:4px 9px}
 button:hover{background:#4a3d31}
@@ -40,3 +40,8 @@ button:hover{background:#4a3d31}
 .gw .fav{top:6px;right:6px}
 .vb{padding:3px 8px;background:#2a231c;font-size:14px}
 .vb.on{background:#5a4a3a;color:#ffcf4a}
+
+/* moving the chat: it jumps to where you let go */
+body.moving header{cursor:grabbing;background:#4a3d31}
+body.moving #chat{outline:2px dashed #ffcf4a;outline-offset:-4px}
+body.moving header .t::after{content:" · let go to move it here";font:600 13px "Barlow Condensed",sans-serif;color:#ffcf4a}

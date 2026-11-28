@@ -663,7 +663,11 @@ ${sum}  I *= glow;
   runBird();
 
   // ---- table chat: a panel on the left, opened from the party bar; this page keeps the log ----
-  const CHAT_ID = `${ID}/chat`, CHAT_OPEN = `${ID}/chatOpen`;
+  const CHAT_ID = `${ID}/chat`, CHAT_OPEN = `${ID}/chatOpen`, CHAT_POS = `${ID}/chatPos`;
+  const CHAT_W = 320;
+  // where this player has put the chat: its left edge and its bottom edge (null = the default spot)
+  let chatPos = null;
+  try { const v = JSON.parse(localStorage.getItem(CHAT_POS) || "null"); if (v && Number.isFinite(v.x) && Number.isFinite(v.y)) chatPos = v; } catch (_) {}
   const chatBc = new BroadcastChannel(CHAT_BC);
   let chatOpen = false;
   try { chatOpen = localStorage.getItem(CHAT_OPEN) === "1"; } catch (_) {}
@@ -671,16 +675,21 @@ ${sum}  I *= glow;
   async function syncChat() {
     const vw = await OBR.viewport.getWidth();
     const vh = await OBR.viewport.getHeight();
-    const key = chatOpen ? `${vw}x${vh}` : "off";
+    const key = chatOpen ? `${vw}x${vh}@${chatPos ? `${chatPos.x},${chatPos.y}` : "home"}` : "off";
     if (key === chatKey && !chatRaise) return;
     if (!chatOpen) { await OBR.popover.close(CHAT_ID); chatKey = key; chatRaise = false; return; }
-    if (chatRaise) { chatRaise = false; await OBR.popover.close(CHAT_ID); }
-    // sits above the party bar's cards on the left, out of the way of the map tools
-    const bottom = vh - 240;
+    // a move or a raise reopens it, so it lands in its new spot (the log is kept, so nothing is lost)
+    if (chatRaise || chatKey !== "off") { chatRaise = false; await OBR.popover.close(CHAT_ID); }
+    // by default it sits above the party bar's cards on the left; the player can drag it anywhere
+    const home = { x: 12, y: vh - 240 };
+    const height = Math.max(220, Math.min(460, home.y - 70));
+    const at = chatPos || home;
+    const left = Math.max(0, Math.min(vw - CHAT_W - 8, at.x));
+    const bottom = Math.max(height + 8, Math.min(vh - 8, at.y));
     await OBR.popover.open({
       id: CHAT_ID, url: new URL("chat.html", import.meta.url).href,
-      width: 320, height: Math.max(220, Math.min(460, bottom - 70)),
-      anchorReference: "POSITION", anchorPosition: { left: 12, top: bottom },
+      width: CHAT_W, height,
+      anchorReference: "POSITION", anchorPosition: { left, top: bottom },
       anchorOrigin: { horizontal: "LEFT", vertical: "BOTTOM" }, transformOrigin: { horizontal: "LEFT", vertical: "BOTTOM" },
       hidePaper: true, disableClickAway: true, marginThreshold: 0,
     });
@@ -694,6 +703,17 @@ ${sum}  I *= glow;
     runChat();
     chatBc.postMessage({ chatState: chatOpen });
   };
+  // the player dragged the chat's title bar: move it by that much (or back home on a double click)
+  async function moveChat(m) {
+    if (m.home) chatPos = null;
+    else {
+      const vh = await OBR.viewport.getHeight();
+      const from = chatPos || { x: 12, y: vh - 240 };
+      chatPos = { x: Math.round(from.x + (Number(m.dx) || 0)), y: Math.round(from.y + (Number(m.dy) || 0)) };
+    }
+    try { localStorage.setItem(CHAT_POS, JSON.stringify(chatPos)); } catch (_) {}
+    runChat();
+  }
   setInterval(runChat, 2000); // follows window resizes
   runChat();
 
@@ -738,6 +758,7 @@ ${sum}  I *= glow;
     else if (d.chat === "open") setChat(true);
     else if (d.chat === "close") setChat(false);
     else if (d.ask === "state") chatBc.postMessage({ chatState: chatOpen });
+    else if (d.chatMove) moveChat(d.chatMove);
   };
 
   // ---- scene backdrop over the whole screen, for everyone (GM can peek behind it) ----

@@ -68,6 +68,31 @@ form.addEventListener("submit", (e) => {
   input.value = "";
 });
 document.getElementById("close").addEventListener("click", () => bc.postMessage({ chat: "close" }));
+// Drag the title bar to move the chat; it jumps to where you let go. Double-click it to send it back home.
+const head = document.querySelector("header");
+let drag = null;
+head.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || e.target.closest("button")) return;
+  drag = { x: e.screenX, y: e.screenY, moved: false };
+  head.setPointerCapture(e.pointerId);
+});
+head.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  drag.lx = e.screenX; drag.ly = e.screenY;
+  if (!drag.moved && Math.abs(e.screenX - drag.x) + Math.abs(e.screenY - drag.y) > 5) { drag.moved = true; document.body.classList.add("moving"); }
+});
+const endDrag = (e) => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  document.body.classList.remove("moving");
+  // if the browser stops sending the pointer once it leaves the panel, use the last place we saw it
+  const x = e.type === "pointerup" ? e.screenX : d.lx, y = e.type === "pointerup" ? e.screenY : d.ly;
+  if (d.moved && x !== undefined) bc.postMessage({ chatMove: { dx: x - d.x, dy: y - d.y } });
+};
+head.addEventListener("pointerup", endDrag);
+head.addEventListener("pointercancel", endDrag);
+head.addEventListener("lostpointercapture", endDrag);
+head.addEventListener("dblclick", (e) => { if (!e.target.closest("button")) bc.postMessage({ chatMove: { home: true } }); });
 logEl.addEventListener("click", (e) => {
   const b = e.target.closest(".fav"), w = b && b.closest(".gw");
   if (!w) return;

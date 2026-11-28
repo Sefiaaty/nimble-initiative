@@ -22,10 +22,21 @@ button:hover{background:#4a3d31}
 #picker[hidden]{display:none}
 #gsearch{display:flex;gap:5px;padding:6px}
 #grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:0 6px 6px;align-content:start;scrollbar-width:thin;scrollbar-color:#5a4a3a transparent}
-#grid img{width:100%;height:74px;object-fit:cover;border-radius:6px;cursor:pointer;background:#2a231c}
-#grid img:hover{outline:2px solid #ffcf4a}
 #grid .msg{grid-column:1/-1;color:#b8ab95;font-size:14px;padding:6px 2px;line-height:1.25}
 #grid .msg a{color:#e4c98e}
 #pfoot{padding:3px 8px 5px;font-size:12px;color:#8d8170;display:flex;gap:6px;align-items:center}
 #pfoot input{flex:1;min-width:0;font:600 13px "Barlow Condensed",sans-serif;padding:3px 7px;border-radius:7px;border:1px solid #17120e;background:#fffaf0;color:#17120e}
 #pfoot button{font-size:12px;padding:2px 7px}
+
+/* GIF tiles with a star to save them */
+#grid .tile{position:relative}
+#grid .tile img{display:block;width:100%;height:74px;object-fit:cover;border-radius:6px;cursor:pointer;background:#2a231c}
+#grid .tile:hover img{outline:2px solid #ffcf4a}
+.fav{position:absolute;right:3px;top:3px;width:24px;height:24px;padding:0;border-radius:50%;background:rgba(23,18,14,.75);color:#efe6d2;font-size:15px;line-height:24px;text-align:center;opacity:0;transition:opacity .15s}
+.fav.on{color:#ffcf4a;opacity:1}
+.tile:hover .fav,.gw:hover .fav{opacity:1}
+.gw{position:relative;display:inline-block;max-width:100%}
+.gw .g{display:block}
+.gw .fav{top:6px;right:6px}
+.vb{padding:3px 8px;background:#2a231c;font-size:14px}
+.vb.on{background:#5a4a3a;color:#ffcf4a}

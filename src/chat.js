@@ -20,6 +20,19 @@ let LOG = "";
 let giphyKey = "";
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const readLog = () => { try { const v = JSON.parse(localStorage.getItem(LOG) || "[]"); return Array.isArray(v) ? v : []; } catch (_) { return []; } };
+// Starred GIFs, kept in this browser (they cost no GIPHY searches)
+const FAVS = "nimble-gif-favs";
+const readFavs = () => { try { const v = JSON.parse(localStorage.getItem(FAVS) || "[]"); return Array.isArray(v) ? v : []; } catch (_) { return []; } };
+const saveFavs = (l) => { try { localStorage.setItem(FAVS, JSON.stringify(l.slice(0, 80))); } catch (_) {} };
+const isFav = (url) => readFavs().some((f) => f.url === url);
+function toggleFav(g) {
+  const l = readFavs();
+  const i = l.findIndex((f) => f.url === g.url);
+  if (i >= 0) l.splice(i, 1); else l.unshift({ url: g.url, preview: g.preview || g.url, title: g.title || "GIF", kind: g.kind || "img" });
+  saveFavs(l);
+  return i < 0;
+}
+const star = (on) => `<button type="button" class="fav${on ? " on" : ""}" title="${on ? "Remove from saved GIFs" : "Save this GIF"}">${on ? "★" : "☆"}</button>`;
 const hhmm = (t) => { const d = new Date(t); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
 
 function render() {
@@ -28,7 +41,7 @@ function render() {
   logEl.innerHTML = list.length ? list.map((m) => {
     const who = `<b>${esc(m.name || "Someone")}</b>`;
     const body = m.url
-      ? (m.kind === "video" ? `<video class="g" src="${esc(m.url)}" autoplay loop muted playsinline></video>` : `<img class="g" src="${esc(m.url)}" alt="GIF" loading="lazy">`)
+      ? `<span class="gw" data-url="${esc(m.url)}" data-kind="${m.kind === "video" ? "video" : "img"}">${m.kind === "video" ? `<video class="g" src="${esc(m.url)}" autoplay loop muted playsinline></video>` : `<img class="g" src="${esc(m.url)}" alt="GIF" loading="lazy">`}${star(isFav(m.url))}</span>`
       : esc(m.text);
     return `<div class="m${m.gm ? " gm" : ""}${m.pid === me.id ? " me" : ""}">${who}<i>${hhmm(m.at)}</i>${m.url ? body : ` ${body}`}</div>`;
   }).join("") : `<div class="empty">Say something, or share a GIF. It also pops up above your card on the party bar.</div>`;
@@ -55,20 +68,40 @@ form.addEventListener("submit", (e) => {
   input.value = "";
 });
 document.getElementById("close").addEventListener("click", () => bc.postMessage({ chat: "close" }));
+logEl.addEventListener("click", (e) => {
+  const b = e.target.closest(".fav"), w = b && b.closest(".gw");
+  if (!w) return;
+  const on = toggleFav({ url: w.dataset.url, kind: w.dataset.kind });
+  b.outerHTML = star(on);
+  if (!picker.hidden && view === "saved") showSaved();
+});
 
 // ---------- GIF picker (GIPHY) ----------
 // GIPHY's free key allows about 100 searches an hour for everyone together, so it only searches on Enter,
 // and the trending list is kept for 10 minutes.
 const TRENDING = "nimble-giphy-trending";
+let view = "saved"; // "saved" | "trending" | "search"
+const vSaved = document.getElementById("vsaved"), vTrend = document.getElementById("vtrend");
+function setView(v) { view = v; vSaved.classList.toggle("on", v === "saved"); vTrend.classList.toggle("on", v === "trending"); }
 function showPicker(open, words) {
   picker.hidden = !open;
   gifBtn.classList.toggle("on", open);
   if (!open) return;
   renderFoot();
-  if (!giphyKey) { noKey(); return; }
   ginput.focus();
-  if (words) { ginput.value = words; gsearch.requestSubmit(); } else trending(); // searching right away skips trending (saves a call)
+  if (words && giphyKey) { ginput.value = words; gsearch.requestSubmit(); return; } // searching right away skips the rest (saves a call)
+  // open on your saved GIFs when you have some: they cost no searches
+  if (readFavs().length || !giphyKey) showSaved(); else trending();
 }
+function showSaved() {
+  setView("saved");
+  const favs = readFavs();
+  if (favs.length) { showResults(favs, true); return; }
+  if (!giphyKey) { noKey(); return; }
+  grid.innerHTML = `<div class="msg">No saved GIFs yet. Tap ☆ on any GIF, here or in the chat, to keep it here.</div>`;
+}
+vSaved.addEventListener("click", showSaved);
+vTrend.addEventListener("click", () => { if (giphyKey) trending(); else noKey(); });
 // GIF button: with words in the chat box it searches for them, otherwise it opens the picker
 gifBtn.addEventListener("click", () => {
   const words = input.value.trim();
@@ -92,14 +125,25 @@ function renderFoot() {
     giphyKey = k; renderFoot(); if (k) trending(); else noKey();
   });
 }
-function showResults(items) {
+function showResults(items, saved) {
   if (!items.length) { grid.innerHTML = `<div class="msg">No GIFs found.</div>`; return; }
-  grid.innerHTML = items.map((g) => `<img src="${esc(g.preview)}" data-url="${esc(g.url)}" alt="${esc(g.title)}" title="${esc(g.title)}" loading="lazy">`).join("");
+  const favs = new Set(readFavs().map((f) => f.url));
+  grid.innerHTML = items.map((g) => `<div class="tile" data-url="${esc(g.url)}" data-preview="${esc(g.preview)}" data-title="${esc(g.title)}" data-kind="${esc(g.kind || "img")}">`
+    + `<img src="${esc(g.preview)}" alt="${esc(g.title)}" title="${esc(g.title)}" loading="lazy">${star(saved || favs.has(g.url))}</div>`).join("");
 }
 grid.addEventListener("click", (e) => {
-  const img = e.target.closest("img[data-url]");
-  if (!img) return;
-  send({ k: "gif", url: img.dataset.url, kind: "img" });
+  const tile = e.target.closest(".tile");
+  if (!tile) return;
+  const g = { url: tile.dataset.url, preview: tile.dataset.preview, title: tile.dataset.title, kind: tile.dataset.kind };
+  const b = e.target.closest(".fav");
+  if (b) {
+    const on = toggleFav(g);
+    if (view === "saved" && !on) { tile.remove(); if (!grid.querySelector(".tile")) showSaved(); }
+    else b.outerHTML = star(on);
+    render(); // the stars in the chat follow
+    return;
+  }
+  send({ k: "gif", url: g.url, kind: g.kind === "video" ? "video" : "img" });
   showPicker(false);
 });
 async function giphy(path, params) {
@@ -121,8 +165,9 @@ function oops(err) {
 async function trending() {
   try {
     const c = JSON.parse(sessionStorage.getItem(TRENDING) || "null");
-    if (c && Date.now() - c.at < 600000) { showResults(c.items); return; }
+    if (c && Date.now() - c.at < 600000) { setView("trending"); showResults(c.items); return; }
   } catch (_) {}
+  setView("trending");
   grid.innerHTML = `<div class="msg">Loading…</div>`;
   try {
     const items = await giphy("trending", {});
@@ -135,6 +180,7 @@ gsearch.addEventListener("submit", async (e) => {
   const q = ginput.value.trim();
   if (!giphyKey) return;
   if (!q) { trending(); return; }
+  setView("search");
   grid.innerHTML = `<div class="msg">Searching…</div>`;
   try { showResults(await giphy("search", { q })); } catch (err) { oops(err); }
 });

@@ -16,7 +16,7 @@ html,body{margin:0;background:transparent;overflow:hidden;font-family:"Barlow Co
 .card.turn .name{background:linear-gradient(#fff3c4,#f2d27a)}
 .quiet{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);z-index:3;background:rgba(138,42,34,.92);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;font-weight:700;white-space:nowrap}
 .card.isquiet .frame{border-color:#8a2a22}
-.note{position:fixed;bottom:4px;left:50%;transform:translateX(-50%);background:rgba(23,18,14,.85);color:#efe6d2;font-size:12px;padding:3px 9px;border-radius:9px}
+.note{position:fixed;top:6px;max-width:90%;text-align:center;left:50%;transform:translateX(-50%);background:rgba(23,18,14,.85);color:#efe6d2;font-size:12px;padding:3px 9px;border-radius:9px}
 
 .card{overflow:visible}
 /* my own card: action buttons along the bottom of the portrait */
@@ -24,6 +24,9 @@ html,body{margin:0;background:transparent;overflow:hidden;font-family:"Barlow Co
 .tools button,.gmtools button{border:0;border-radius:8px;padding:0;width:calc(var(--w)*.15);height:calc(var(--w)*.15);min-width:18px;min-height:18px;font-size:calc(var(--w)*.09);line-height:1;cursor:pointer;background:rgba(23,18,14,.78);color:#efe6d2}
 .tools button.on{background:#2e7d4f}
 .tools button.blocked{background:#8a2a22}
+/* the mic was on before the bar reloaded: one click turns it back on */
+.tools button.lost{background:#c98a12;animation:lostmic 1.1s ease-in-out infinite}
+@keyframes lostmic{50%{box-shadow:0 0 0 3px rgba(255,207,74,.9),0 0 12px rgba(255,207,74,.8)}}
 .tools button[data-act=hand].on{background:#c98a12}
 .tools button[data-act=brb].on{background:#5a5f73}
 /* GM tools on other cards, on hover */

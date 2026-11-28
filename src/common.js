@@ -15,6 +15,7 @@ export const SCENE_KEY = `${ID}/scene`;   // room metadata: the scene backdrop s
 export const PEEK_KEY = `${ID}/peek`;     // GM's browser: hide the backdrop for me only
 export const SCENE_CH = "nimble-scene";
 export const CAMP_CH = `${ID}/camp`;      // broadcast: pokes and the GM's campfire levers
+export const BIRD_SAY_CH = `${ID}/bird-say`; // broadcast: a line the GM typed for the bird to say
 export const BAR_HIDDEN_KEY = `${ID}/barHiddenForMe`; // this browser only: don't show the party bar here   // BroadcastChannel between this browser's extension frames
 export function sceneOf(md) {
   const s = (md && md[SCENE_KEY]) || {};

@@ -1,6 +1,6 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GM bird</title><link rel="stylesheet" href="bird.css?v=89ab835e"></head>
+<title>GM bird</title><link rel="stylesheet" href="bird.css?v=75e0dd93"></head>
 <body>
 <div id="wrap">
   <svg id="bubble" viewBox="0 0 100 80" aria-hidden="true">
@@ -13,7 +13,10 @@
     <path class="line" d="M110 181 C140 179 168 182 192 187 C206 190 218 191 232 191"/>
   </svg>
   <img id="bird" src="bird/bird.png" alt="">
+  <div id="say"><span></span></div>
   <button id="mic" title="Turn on your talking light: the bird's speech bubble shows when you talk">🎙</button>
+  <button id="saybtn" title="Type a line for the bird to say (end it with ! to shout)">💬</button>
+  <form id="sayform" autocomplete="off"><input type="text" maxlength="120" placeholder="The bird says… (Enter)"></form>
 </div>
-<script type="module" src="bird.js?v=89ab835e"></script>
+<script type="module" src="bird.js?v=75e0dd93"></script>
 </body></html>

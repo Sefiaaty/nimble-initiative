@@ -26,6 +26,8 @@ const emotes = new Map();    // pid -> { e, at }
 const says = new Map();      // pid -> { text, at }
 const whispers = new Map();  // pid -> [{ text, at }]  (GM only)
 const nudged = new Map();    // pid -> at
+const moments = new Map();   // pid -> when the GM marked "had a moment" (GM only)
+const MOMENT_MS = 10 * 60000; // for this long they are not flagged as quiet or picked for "ask next"
 let own = { hand: false, brb: false };
 try { own = { ...own, ...JSON.parse(localStorage.getItem(OWN_PREF) || "{}") }; } catch (_) {}
 let mic = { state: "off", stream: null, ctx: null, timer: null, on: false, sentAt: 0, note: "" };
@@ -93,7 +95,9 @@ async function flushStats() {
 
 // ---------- rendering ----------
 let viewW = 1600; // Owlbear's viewport width, so the bar sizes cards exactly like the popover was sized
-const live = (pid) => { const s = states.get(pid); return s && Date.now() - s.at < 12000 ? s : null; };
+// Status heartbeats come every 4 s, but a browser only runs timers about once a minute in a tab that has
+// been in the background for a while (a player alt-tabbed to Discord), so allow for that.
+const live = (pid) => { const s = states.get(pid); return s && Date.now() - s.at < 75000 ? s : null; };
 
 function render() {
   const p = partyOf(roomMd);
@@ -112,12 +116,13 @@ function render() {
   const now = Date.now();
   const gm = isGM();
   // who is "quiet": players with a working mic, here (not BRB), ranked by airtime
+  const hadMoment = (pid) => moments.has(pid) && now - moments.get(pid) < MOMENT_MS;
   const eligible = urls.filter((u) => !(p.members[u] || {}).absent).map((u) => (p.members[u] || {}).pid).filter((pid) => pid && live(pid) && live(pid).mic && !live(pid).brb);
   const longEnough = now - stats.since > 5 * 60000;
   const byAir = [...eligible].sort((a, b) => airtime(a) - airtime(b));
   const maxAir = Math.max(1, ...eligible.map(airtime));
-  const quietSet = gm && longEnough && eligible.length >= 3 ? new Set(byAir.slice(0, eligible.length >= 6 ? 2 : 1)) : new Set();
-  const askNext = gm && eligible.length >= 2 ? [...eligible].filter((x) => !talking.has(x)).sort((a, b) => recentAir(a) - recentAir(b) || airtime(a) - airtime(b))[0] : null;
+  const quietSet = gm && longEnough && eligible.length >= 3 ? new Set(byAir.filter((x) => !hadMoment(x)).slice(0, eligible.length >= 6 ? 2 : 1)) : new Set();
+  const askNext = gm && eligible.length >= 2 ? [...eligible].filter((x) => !talking.has(x) && !hadMoment(x)).sort((a, b) => recentAir(a) - recentAir(b) || airtime(a) - airtime(b))[0] : null;
 
   const cards = urls.map((u) => {
     const m = p.members[u] || {};
@@ -140,7 +145,7 @@ function render() {
     const subIcon = m.cls && m.sub ? SUBCLASS_ICONS[`${m.cls}/${m.sub}`] : null;
     const icon = subIcon || (m.cls && CLASS_ICONS[m.cls]) ? `<div class="badge" title="${esc(m.sub ? `${m.sub} (${m.cls})` : m.cls)}"><svg viewBox="0 0 512 512">${subIcon || CLASS_ICONS[m.cls]}</svg></div>` : "";
     const tools = mine ? `<div class="tools">
-        <button class="${mic.state}" data-act="mic" title="${mic.state === "blocked" ? esc(mic.note) : "Light up my card when I talk"}">🎙</button>
+        <button class="${mic.state}" data-act="mic" title="${mic.state === "blocked" ? esc(mic.note) : mic.state === "lost" ? "Click to turn your mic back on" : "Light up my card when I talk"}">🎙</button>
         <button class="${own.hand ? "on" : ""}" data-act="hand" title="Raise / lower your hand">✋</button>
         <button data-act="emote" title="Quick reaction">😀</button>
         <button data-act="say" title="Say something (speech bubble)">💬</button>
@@ -152,7 +157,7 @@ function render() {
       : gm && pid ? `<div class="gmtools">
         <button data-act="frame" data-url="${esc(u)}" title="Move / zoom this picture">✥</button>
         <button data-act="nudge" data-pid="${esc(pid)}" title="Turn to them: their card pulses and they hear a soft chime">🔔</button>
-        <button data-act="moment" data-pid="${esc(pid)}" title="Had a moment (resets the quiet timer)">★</button>
+        <button data-act="moment" data-pid="${esc(pid)}" title="Had a moment: not flagged as quiet or picked for &quot;ask next&quot; for 10 minutes">★</button>
         <button data-act="insp+" data-url="${esc(u)}" title="Give Inspiration">✦+</button>
         <button data-act="insp-" data-url="${esc(u)}" title="Take away Inspiration" ${insp ? "" : "disabled"}>✦−</button>
         ${absBtn}
@@ -180,7 +185,7 @@ function render() {
   });
   patchCards(cards);
   const extra = (gm ? `<button class="bell ${gmBell ? "on" : ""}" data-act="bell" title="${gmBell ? "Pings on (hands, whispers, Inspiration)" : "Click to turn on soft pings for you"}">${gmBell ? "🔔" : "🔕"}</button>` : "")
-    + (mic.note && mic.state === "blocked" ? `<div class="note">${esc(mic.note)}</div>` : "");
+    + (mic.note && (mic.state === "blocked" || mic.state === "lost") ? `<div class="note">${esc(mic.note)}</div>` : "");
   if (extra !== lastHtml) { extras.innerHTML = extra; lastHtml = extra; }
   renderLayer();
 }
@@ -302,6 +307,7 @@ function send(on) {
   mic.on = on;
   mic.sentAt = Date.now();
   OBR.broadcast.sendMessage(TALK_CH, { pid: me.id, on }, { destination: "ALL" }).catch(() => {});
+  beatSoon();
 }
 
 let helper = null;
@@ -314,7 +320,8 @@ async function openHelper() {
   try { fresh = w.location.href === "about:blank"; } catch (_) { fresh = false; }
   if (fresh) w.location.href = url; else w.postMessage({ type: "nimble-hello" }, location.origin);
   helper = w;
-  mic.state = "on"; mic.helper = true;
+  mic.state = "on"; mic.helper = true; mic.note = "";
+  setPref(true); // so the bar reconnects by itself after Owlbear reloads it
   heartbeat();
   render();
   return true;
@@ -329,7 +336,10 @@ setInterval(() => {
 }, 1500);
 
 // my state, repeated so late joiners and reloaded bars catch up
-function heartbeat() { if (me.id) ev({ k: "st", mic: mic.state === "on", brb: !!own.brb, hand: !!own.hand }); }
+let lastBeat = 0;
+function heartbeat() { if (!me.id) return; lastBeat = Date.now(); ev({ k: "st", mic: mic.state === "on", brb: !!own.brb, hand: !!own.hand }); }
+const beatSoon = () => { if (Date.now() - lastBeat > 3000) heartbeat(); };
+document.addEventListener("visibilitychange", beatSoon);
 
 // ---------- clicks ----------
 async function setInsp(u, delta) {
@@ -372,7 +382,10 @@ async function act(a, el) {
     case "nudge":
       ev({ k: "nudge", pid }); lastTalk.set(pid, Date.now()); return;
     case "moment":
-      lastTalk.set(pid, Date.now()); render(); return;
+      // they just had their spotlight: reset the quiet timer and leave them out of the quiet picks for a while
+      lastTalk.set(pid, Date.now()); moments.set(pid, Date.now());
+      emotes.set(pid, { e: "★", at: Date.now() }); // a star floats up on their card (on the GM's screen)
+      render(); return;
     case "frame": {
       if (!isGM()) return;
       const u = el.dataset.url, p = partyOf(roomMd), m = p.members[u] || {};
@@ -549,6 +562,10 @@ OBR.onReady(async () => {
     if (!pid) return;
     const now = Date.now();
     if (on) { talking.set(pid, now); lastTalk.set(pid, now); talkOn(pid); } else { talking.delete(pid); talkOff(pid); }
+    // someone we can hear has a working mic, even if their last status (maybe from a throttled tab) said otherwise
+    const prev = states.get(pid);
+    if (!(prev && prev.mic)) micOnAt.set(pid, now);
+    states.set(pid, { brb: false, hand: false, ...(prev || {}), mic: true, at: now });
     // a raised hand drops by itself after its owner has talked for a few seconds
     if (pid === me.id && own.hand && talkStart.has(pid) && now - talkStart.get(pid) > 3000) { own.hand = false; saveOwn(); heartbeat(); }
     render();
@@ -561,10 +578,18 @@ OBR.onReady(async () => {
   setInterval(heartbeat, 4000);
   setInterval(flushStats, 20000);
   heartbeat();
-  if (prefOn() && !mic.helper) {
-    try {
-      const s = await navigator.permissions.query({ name: "microphone" });
-      if (s.state === "granted") startMic();
-    } catch (_) {}
+  // The mic was on before this bar loaded (a scene change, camp or a page refresh reloads the bar):
+  // turn it back on by itself. Use the mic directly if this page may, otherwise find the helper window
+  // again. If the browser won't let us without a click, light up the mic button so it is one click.
+  if (prefOn() && mic.state !== "on") {
+    let granted = false;
+    try { granted = (await navigator.permissions.query({ name: "microphone" })).state === "granted"; } catch (_) {}
+    if (granted) startMic();
+    else if (!(await openHelper())) {
+      mic.state = "lost";
+      mic.note = "Your mic got disconnected when Owlbear reloaded. Click 🎙 on your card to turn it back on.";
+      setTimeout(() => { if (mic.state === "lost") { mic.note = ""; render(); } }, 15000);
+      render();
+    }
   }
 });

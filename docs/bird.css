@@ -17,3 +17,27 @@ body.gm:hover #mic,#mic.on{opacity:1}
 #branch{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 #branch .halo{fill:none;stroke:rgba(239,230,210,.85);stroke-width:5.6;stroke-linecap:round;filter:blur(.9px)}
 #branch .line{fill:none;stroke:#18161a;stroke-width:2.6;stroke-linecap:round}
+
+/* the GM's mic was on before the bird reloaded: one click turns it back on */
+#mic.lost{opacity:1;background:#c98a12;animation:lostmic 1.1s ease-in-out infinite}
+@keyframes lostmic{50%{box-shadow:0 0 0 3px rgba(255,207,74,.9),0 0 10px rgba(255,207,74,.8)}}
+/* typing a line for the bird */
+#saybtn{position:absolute;right:4px;top:58px;display:none;font-size:14px;line-height:1;padding:4px 6px;border-radius:9px;border:0;cursor:pointer;background:rgba(30,34,49,.85);color:#fff;opacity:.25;transition:opacity .2s}
+body.gm #saybtn{display:block}
+body.gm:hover #saybtn,body.typing #saybtn{opacity:1}
+#sayform{position:absolute;left:4px;right:38px;top:4px;display:none;margin:0}
+body.typing #sayform{display:block}
+#sayform input{width:100%;box-sizing:border-box;font:600 13px system-ui,sans-serif;padding:5px 8px;border-radius:9px;border:2px solid #2a1d1a;background:#fffaf0;color:#17120e;outline:none}
+/* the typed words, in a bubble above the bird; the squiggle bubble steps aside while they show */
+#say{position:absolute;left:22px;bottom:120px;width:max-content;min-width:46px;max-width:160px;box-sizing:border-box;padding:6px 10px;background:#e8dca8;color:#2a1d1a;border:3px solid #2a1d1a;border-radius:14px;
+  font:700 13px/1.15 system-ui,sans-serif;text-align:center;filter:drop-shadow(0 2px 3px rgba(0,0,0,.45));opacity:0;transform:scale(.4);transform-origin:30% 100%;transition:opacity .18s ease,transform .22s cubic-bezier(.3,1.6,.6,1);pointer-events:none}
+#say span{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+/* the tail points down at the bird's beak */
+#say::before,#say::after{content:"";position:absolute;left:42px;top:100%;border-style:solid;border-color:transparent}
+#say::before{margin-left:-2px;border-width:13px 9px 0 3px;border-top-color:#2a1d1a}
+#say::after{margin-top:-4px;border-width:9px 6px 0 2px;border-top-color:#e8dca8}
+#say.shout::after{border-top-color:#fff3c4}
+body.words #say{opacity:1;transform:scale(1)}
+body.words #bubble{opacity:0!important}
+#say.shout{font:italic 900 15px/1.05 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.02em;background:#fff3c4;border-width:3px;border-radius:6px;animation:shake .45s ease-out}
+@keyframes shake{0%{transform:scale(.5) rotate(-6deg)}35%{transform:scale(1.12) rotate(3deg)}55%{transform:scale(1) rotate(-2deg)}75%{transform:rotate(1deg)}100%{transform:rotate(-1deg)}}

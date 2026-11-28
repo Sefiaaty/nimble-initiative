@@ -116,7 +116,7 @@ export const LIGHTS_OFF_KEY = `${ID}/lightsOff`; // per map: every light switche
 export const LIGHT_PRESETS = [
   { k: "torch", name: "Torch", icon: "torch", color: "#ff9a40", r: 8, power: 1.1, flame: 1, pulse: 0 },
   { k: "candle", name: "Candle", icon: "candle-light", color: "#ffc070", r: 2, power: 0.8, flame: 0.6, pulse: 0 },
-  { k: "campfire", name: "Campfire", icon: "campfire", color: "#ff7e30", r: 10, power: 1.3, flame: 1, pulse: 0 },
+  { k: "campfire", name: "Campfire", icon: "campfire", color: "#ff7e30", r: 8, power: 0.85, flame: 1, pulse: 0 },
   { k: "chandelier", name: "Chandelier", icon: "ceiling-light", color: "#ffd28c", r: 10, power: 1.0, flame: 0.25, pulse: 0 },
   { k: "lantern", name: "Lantern", icon: "lantern-flame", color: "#ffc874", r: 12, power: 1.0, flame: 0.35, pulse: 0 },
   { k: "mushrooms", name: "Glowing mushrooms", icon: "mushrooms-cluster", color: "#b45cff", r: 3, power: 1.3, flame: 0, pulse: 0.45 },
@@ -132,6 +132,8 @@ export const CARRY_LAST_KEY = `${ID}/carryLast`; // the last kind someone picked
 export const isLightMarker = (item) => item.type === "SHAPE" || !!(item.metadata && item.metadata[LIGHT_KEY] && item.metadata[LIGHT_KEY].marker);
 export const lightPreset = (k) => LIGHT_PRESETS.find((p) => p.k === k) || LIGHT_PRESETS[0];
 const num = (v, d, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+// Presets that used to be brighter: their old values, so lights placed back then calm down too
+const OLD_DEFAULTS = { campfire: { r: 10, power: 1.3 } };
 export function lightOf(item) {
   const m = item && item.metadata && item.metadata[LIGHT_KEY];
   if (!m) return null;
@@ -139,7 +141,9 @@ export function lightOf(item) {
   return {
     k: p.k,
     color: /^#[0-9a-f]{6}$/i.test(m.color || "") ? m.color : p.color,
-    r: num(m.r, p.r, 0.5, 30), power: num(m.power, p.power, 0, 3),
+    // a light placed with an older, brighter default follows the new default (anything the GM tuned by hand stays)
+    r: num(OLD_DEFAULTS[p.k] && m.r === OLD_DEFAULTS[p.k].r ? p.r : m.r, p.r, 0.5, 30),
+    power: num(OLD_DEFAULTS[p.k] && m.power === OLD_DEFAULTS[p.k].power ? p.power : m.power, p.power, 0, 3),
     flame: num(m.flame, p.flame, 0, 1), pulse: num(m.pulse, p.pulse, 0, 1),
     on: m.on !== false,
   };

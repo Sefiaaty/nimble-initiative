@@ -41,3 +41,9 @@ body.words #say{opacity:1;transform:scale(1)}
 body.words #bubble{opacity:0!important}
 #say.shout{font:italic 900 15px/1.05 system-ui,sans-serif;text-transform:uppercase;letter-spacing:.02em;background:#fff3c4;border-width:3px;border-radius:6px;animation:shake .45s ease-out}
 @keyframes shake{0%{transform:scale(.5) rotate(-6deg)}35%{transform:scale(1.12) rotate(3deg)}55%{transform:scale(1) rotate(-2deg)}75%{transform:rotate(1deg)}100%{transform:rotate(-1deg)}}
+
+/* a GIF the GM shared in the table chat */
+#gif{position:absolute;left:14px;bottom:118px;border:3px solid #2a1d1a;border-radius:10px;overflow:hidden;background:#2a1d1a;box-shadow:0 2px 6px rgba(0,0,0,.45);opacity:0;transform:scale(.4);transform-origin:30% 100%;transition:opacity .18s ease,transform .22s cubic-bezier(.3,1.6,.6,1);pointer-events:none}
+#gif img,#gif video{display:block;height:74px;width:auto;max-width:170px;object-fit:cover}
+body.pic #gif{opacity:1;transform:scale(1)}
+body.pic #bubble,body.pic #say{opacity:0!important}

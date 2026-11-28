@@ -1,7 +1,7 @@
 // The GM's little bird in the corner: its speech bubble pops up whenever the GM talks (everyone sees it).
 // The GM can also type a line for it to say: everyone sees the words in its bubble, and a line ending in ! is shouted.
 import OBR from "@owlbear-rodeo/sdk";
-import { TALK_CH, BIRD_SAY_CH } from "./common.js";
+import { TALK_CH, EV_CH } from "./common.js";
 
 const micBtn = document.getElementById("mic");
 const sayBtn = document.getElementById("saybtn");
@@ -9,18 +9,23 @@ const sayEl = document.getElementById("say");
 const sayText = sayEl.querySelector("span");
 const form = document.getElementById("sayform");
 const input = form.querySelector("input");
+const gifEl = document.getElementById("gif");
 const PREF = "nimble-gm-bird-mic";
 let me = { id: null, role: "PLAYER" };
 let gmIds = new Set();
 let talkingAt = 0;
 let helper = null, micOn = false, micLost = false;
 let saying = null; // { text, until }
+let gifUntil = 0;   // a GIF the GM shared in the table chat, shown above the bird
 
 function update() {
   const now = Date.now();
   const words = saying && now < saying.until;
+  const pic = now < gifUntil;
+  if (!pic && gifEl.firstChild) gifEl.innerHTML = "";
+  document.body.classList.toggle("pic", pic);
   if (saying && !words) { saying = null; sayText.textContent = ""; }
-  document.body.classList.toggle("talk", now - talkingAt < 2500 || !!words);
+  document.body.classList.toggle("talk", now - talkingAt < 2500 || !!words || pic);
   document.body.classList.toggle("words", !!words);
   document.body.classList.toggle("gm", me.role === "GM");
   micBtn.classList.toggle("on", micOn);
@@ -34,6 +39,16 @@ function showSay(text) {
   sayText.textContent = t;
   sayEl.classList.toggle("shout", /!\s*$/.test(t));
   sayEl.classList.remove("pop"); void sayEl.offsetWidth; sayEl.classList.add("pop");
+  gifUntil = 0;
+  update();
+}
+function showGif(url, kind) {
+  if (typeof url !== "string" || !/^https?:\/\//.test(url)) return;
+  const el = document.createElement(kind === "video" ? "video" : "img");
+  if (kind === "video") { el.autoplay = true; el.loop = true; el.muted = true; el.playsInline = true; }
+  el.src = url;
+  gifEl.innerHTML = ""; gifEl.appendChild(el);
+  gifUntil = Date.now() + 8000; saying = null;
   update();
 }
 async function refreshGms() {
@@ -73,7 +88,8 @@ form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   document.body.classList.remove("typing");
-  if (text && me.role === "GM") OBR.broadcast.sendMessage(BIRD_SAY_CH, { text: text.slice(0, 120) }, { destination: "ALL" }).catch(() => {});
+  // goes out like a table chat line, so it is in the chat log too
+  if (text && me.role === "GM") OBR.broadcast.sendMessage(EV_CH, { k: "say", pid: me.id, text: text.slice(0, 140), at: Date.now(), id: `${me.id}-${Date.now()}` }, { destination: "ALL" }).catch(() => {});
 });
 input.addEventListener("keydown", (e) => { if (e.key === "Escape") document.body.classList.remove("typing"); });
 window.addEventListener("message", (e) => {
@@ -89,7 +105,13 @@ OBR.onReady(async () => {
   await refreshGms();
   OBR.party.onChange(refreshGms);
   OBR.player.onChange(async (p) => { me.role = p.role; await refreshGms(); update(); });
-  OBR.broadcast.onMessage(BIRD_SAY_CH, (ev) => showSay((ev.data || {}).text));
+  // the GM's chat lines and GIFs come out of the bird
+  OBR.broadcast.onMessage(EV_CH, (ev) => {
+    const d = ev.data || {};
+    if (!d.pid || !gmIds.has(d.pid)) return;
+    if (d.k === "say") showSay(d.text);
+    else if (d.k === "gif") showGif(d.url, d.kind);
+  });
   OBR.broadcast.onMessage(TALK_CH, (ev) => {
     const { pid, on } = ev.data || {};
     if (!pid || !gmIds.has(pid)) return;

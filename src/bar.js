@@ -2,10 +2,9 @@
 // Players: talking light, raise hand, quick emotes, say (speech bubble), whisper to the GM, BRB, spend Inspiration.
 // GM: soft pings, nudge a player, quiet meter, "ask next", Inspiration, session recap stats.
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, STATE_KEY, TALK_CH, PARTY_KEY, PEEK_KEY, sceneOf, partyOf, partyList, barLayout, directLink, isHero, getHeroImages, itemName, slotFor } from "./common.js";
+import { ID, STATE_KEY, TALK_CH, PARTY_KEY, PEEK_KEY, EV_CH, CHAT_BC, gifFrom, sceneOf, partyOf, partyList, barLayout, directLink, isHero, getHeroImages, itemName, slotFor } from "./common.js";
 import { CLASS_ICONS, SUBCLASS_ICONS } from "./classIcons.js";
 
-const EV_CH = `${ID}/party-ev`;     // broadcast: player state heartbeats and one-off events
 const STATS_KEY = `${ID}/talkstats`; // room metadata: session recap (written by the GM's bar)
 const MIC_PREF = `${ID}/mic`;
 const OWN_PREF = `${ID}/own`;        // this browser: hand / brb, survives a bar reload
@@ -24,6 +23,10 @@ const lastTalk = new Map();  // pid -> last talked / spotlit
 const states = new Map();    // pid -> { mic, brb, hand, at }
 const emotes = new Map();    // pid -> { e, at }
 const says = new Map();      // pid -> { text, at }
+const gifs = new Map();      // pid -> { url, kind, at }  (a GIF from the table chat, shown above the card)
+const GIF_MS = 8000;
+const chatBc = new BroadcastChannel(CHAT_BC);
+let chatOpen = false, unread = 0;
 const whispers = new Map();  // pid -> [{ text, at }]  (GM only)
 const nudged = new Map();    // pid -> at
 const moments = new Map();   // pid -> when the GM marked "had a moment" (GM only)
@@ -139,6 +142,7 @@ function render() {
     const quietLong = gm && pid && s && s.mic && !brb && !absent && quietFor >= QUIET_MIN; // only when we can actually hear them
     const em = pid && emotes.get(pid);
     const say = pid && says.get(pid);
+    const gif = pid && gifs.get(pid);
     const wh = gm && pid && (whispers.get(pid) || []).length;
     const insp = Number(m.insp) || 0;
     const nudgeOn = pid && nudged.has(pid) && now - nudged.get(pid) < 4000;
@@ -169,7 +173,8 @@ function render() {
     const sf = (m.frame && m.frame[p.style]) || {};
     const fr = draft && draft.u === u ? draft : { x: Number(sf.x) || 0, y: Number(sf.y) || 0, z: Number(sf.z) || 1 };
     return { u, pid, w, fr, cls: cls + (draft && draft.u === u ? " framing" : ""), inner: `
-      ${say && now - say.at < Math.min(16000, 6000 + say.text.length * 60) ? `<div class="say${/!\s*$/.test(say.text) ? " shout" : ""}">${esc(say.text)}</div>` : ""}
+      ${gif && now - gif.at < GIF_MS ? `<div class="gifpop">${gif.kind === "video" ? `<video src="${esc(gif.url)}" autoplay loop muted playsinline></video>` : `<img src="${esc(gif.url)}" alt="">`}</div>`
+        : say && now - say.at < Math.min(16000, 6000 + say.text.length * 60) ? `<div class="say${/!\s*$/.test(say.text) ? " shout" : ""}">${esc(say.text)}</div>` : ""}
       ${askNext === pid ? `<div class="asknext">▼ ask next</div>` : ""}
       ${em && now - em.at < 3500 ? `<div class="emote" data-at="${em.at}">${esc(em.e)}</div>` : ""}
       ${hand ? `<button class="hand" data-act="lower" data-pid="${esc(pid)}" title="${mine ? "Lower your hand" : gm ? "Lower their hand" : "Hand raised"}">!</button>` : ""}
@@ -184,7 +189,8 @@ function render() {
       <div class="player">${esc(m.pname || "")}</div>${meter}` };
   });
   patchCards(cards);
-  const extra = (gm ? `<button class="bell ${gmBell ? "on" : ""}" data-act="bell" title="${gmBell ? "Pings on (hands, whispers, Inspiration)" : "Click to turn on soft pings for you"}">${gmBell ? "🔔" : "🔕"}</button>` : "")
+  const extra = `<button class="chatbtn${chatOpen ? " on" : ""}" data-act="chat" title="${chatOpen ? "Hide the table chat" : "Table chat: type and share GIFs without leaving Owlbear"}">💬${!chatOpen && unread ? `<b>${unread > 9 ? "9+" : unread}</b>` : ""}</button>`
+    + (gm ? `<button class="bell ${gmBell ? "on" : ""}" data-act="bell" title="${gmBell ? "Pings on (hands, whispers, Inspiration)" : "Click to turn on soft pings for you"}">${gmBell ? "🔔" : "🔕"}</button>` : "")
     + (mic.note && (mic.state === "blocked" || mic.state === "lost") ? `<div class="note">${esc(mic.note)}</div>` : "");
   if (extra !== lastHtml) { extras.innerHTML = extra; lastHtml = extra; }
   renderLayer();
@@ -351,9 +357,14 @@ async function setInsp(u, delta) {
 }
 let spendArm = null;
 
+function noteUnread(pid) { if (!chatOpen && pid !== me.id) unread += 1; }
+chatBc.onmessage = (e) => { const d = e.data || {}; if ("chatState" in d) { chatOpen = !!d.chatState; if (chatOpen) unread = 0; render(); } };
+chatBc.postMessage({ ask: "state" });
+
 async function act(a, el) {
   const pid = el.dataset.pid;
   switch (a) {
+    case "chat": chatBc.postMessage({ chat: "toggle" }); return;
     case "mic":
       if (mic.state === "on" && mic.helper) { try { helper && helper.close(); } catch (_) {} helper = null; micOff(); }
       else if (mic.state === "on") micOff();
@@ -508,7 +519,12 @@ function onEvent(d) {
     case "hand": break; // the heartbeat carries the hand state
     case "lower": if (pid === me.id) { own.hand = false; saveOwn(); heartbeat(); } break;
     case "emote": emotes.set(pid, { e: String(d.e).slice(0, 4), at: now }); bump(pid, "emotes"); break;
-    case "say": says.set(pid, { text: String(d.text).slice(0, 140), at: now }); lastTalk.set(pid, now); bump(pid, "says"); break;
+    case "say": says.set(pid, { text: String(d.text).slice(0, 140), at: now }); gifs.delete(pid); lastTalk.set(pid, now); bump(pid, "says"); noteUnread(pid); break;
+    case "gif": {
+      const g = typeof d.url === "string" && /^https?:\/\//.test(d.url) ? { url: d.url, kind: d.kind === "video" ? "video" : "img" } : gifFrom(d.url);
+      if (g) { gifs.set(pid, { ...g, at: now }); says.delete(pid); lastTalk.set(pid, now); bump(pid, "says"); noteUnread(pid); }
+      break;
+    }
     case "whisper":
       if (isGM()) { const l = whispers.get(pid) || []; l.push({ text: String(d.text).slice(0, 140), at: now }); whispers.set(pid, l); gmPing("ping"); bump(pid, "whispers"); }
       break;

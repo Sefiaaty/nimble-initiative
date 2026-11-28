@@ -67,7 +67,7 @@ html,body{margin:0;background:transparent;overflow:hidden;font-family:"Barlow Co
 .card.lowair .frame{box-shadow:0 0 0 3px #4fc3f7,0 0 16px rgba(79,195,247,.85)}
 .asknext{position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);z-index:5;background:#4fc3f7;color:#0b2230;font-weight:700;font-size:12px;padding:1px 8px;border-radius:9px;white-space:nowrap}
 .card:has(.say) .asknext{display:none}
-.bell{position:fixed;left:4px;bottom:6px;z-index:7;border:0;border-radius:12px;padding:3px 7px;background:rgba(23,18,14,.8);color:#efe6d2;font-size:14px;cursor:pointer}
+.bell{position:fixed;left:2px;bottom:6px;z-index:7;border:0;border-radius:12px;padding:3px 7px;background:rgba(23,18,14,.8);color:#efe6d2;font-size:14px;cursor:pointer}
 .bell.on{background:#2e7d4f}
 /* panels: emote picker, composer, whisper reader */
 #layer .panel{position:fixed;z-index:8;background:#1e2231;color:#efe6d2;border:2px solid #17120e;border-radius:12px;padding:6px 8px;box-shadow:0 6px 18px rgba(0,0,0,.5);font:600 14px "Barlow Condensed",sans-serif;display:flex;align-items:center;gap:6px}
@@ -150,3 +150,12 @@ body.cutouts .card.absent .cut,body.cutouts .card.absent .art{filter:grayscale(1
 /* the party walks off to the campfire */
 #bar{transition:opacity .9s ease}
 body.camping #bar{opacity:0;pointer-events:none}
+
+/* a GIF from the table chat, above the sender's card */
+.gifpop{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);z-index:6;border:3px solid #17120e;border-radius:10px;background:#17120e;overflow:hidden;box-shadow:0 3px 10px rgba(0,0,0,.55);animation:pop .25s ease-out;pointer-events:none}
+.gifpop img,.gifpop video{display:block;height:min(108px,calc(var(--w)*.78));width:auto;max-width:calc(var(--w)*1.7);object-fit:cover}
+.card.talk .gifpop{bottom:calc(100% + 8px)}
+/* the table chat button, at the right end of the bar, for everyone */
+.chatbtn{position:fixed;right:2px;bottom:6px;z-index:7;border:0;border-radius:12px;padding:3px 8px;background:rgba(23,18,14,.8);color:#efe6d2;font-size:15px;cursor:pointer}
+.chatbtn.on{background:#2e7d4f}
+.chatbtn b{display:inline-block;margin-left:3px;min-width:16px;padding:0 4px;border-radius:8px;background:#d62b1f;color:#fff;font:800 11px/16px "Barlow Condensed",sans-serif}

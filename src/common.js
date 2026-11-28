@@ -15,7 +15,29 @@ export const SCENE_KEY = `${ID}/scene`;   // room metadata: the scene backdrop s
 export const PEEK_KEY = `${ID}/peek`;     // GM's browser: hide the backdrop for me only
 export const SCENE_CH = "nimble-scene";
 export const CAMP_CH = `${ID}/camp`;      // broadcast: pokes and the GM's campfire levers
-export const BIRD_SAY_CH = `${ID}/bird-say`; // broadcast: a line the GM typed for the bird to say
+export const EV_CH = `${ID}/party-ev`;      // broadcast: party bar heartbeats and events (say, gif, emotes...)
+export const GIPHY_KEY = `${ID}/giphy`;     // room metadata: the GM's GIPHY key, for GIF search in the chat
+export const CHAT_BC = "nimble-chat";       // BroadcastChannel between this browser's extension frames: chat open/close, log updates
+export const chatLogKey = (roomId) => `${ID}/chatlog/${roomId || "room"}`; // this browser: the table chat so far
+// A GIF or picture link someone pasted, made into something we can show: { url, kind: "img" | "video" } or null.
+export function gifFrom(input) {
+  const s = String(input || "").trim();
+  let u;
+  try { u = new URL(s); } catch (_) { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const host = u.hostname.replace(/^www\./, "");
+  // GIPHY page or media links: giphy.com/gifs/some-words-ID, media1.giphy.com/media/ID/giphy.gif
+  if (/(^|\.)giphy\.com$/.test(host)) {
+    const m = u.pathname.match(/\/media\/(?:v1\.[^/]+\/)?([A-Za-z0-9]+)\//) || u.pathname.match(/\/(?:gifs|stickers|clips)\/(?:[^/]*-)?([A-Za-z0-9]+)\/?$/);
+    if (m) return { url: `https://media.giphy.com/media/${m[1]}/giphy.webp`, kind: "img" };
+  }
+  if (host === "i.imgur.com" && /\.gifv$/i.test(u.pathname)) return { url: s.replace(/\.gifv(\?.*)?$/i, ".mp4"), kind: "video" };
+  if (/\.(mp4|webm)$/i.test(u.pathname)) return { url: u.href, kind: "video" };
+  if (/\.(gif|webp|png|jpe?g|avif)$/i.test(u.pathname)) return { url: u.href, kind: "img" };
+  // Discord's own image links end in an extension too, but sometimes carry it only in the query
+  if (/(^|\.)discordapp\.(com|net)$/.test(host) && /format=(gif|webp|png|jpe?g)/i.test(u.search)) return { url: u.href, kind: "img" };
+  return null;
+}
 export const BAR_HIDDEN_KEY = `${ID}/barHiddenForMe`; // this browser only: don't show the party bar here   // BroadcastChannel between this browser's extension frames
 export function sceneOf(md) {
   const s = (md && md[SCENE_KEY]) || {};

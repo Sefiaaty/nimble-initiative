@@ -1,7 +1,7 @@
 // Background script: context menus, cleanup, auto movement and GM-only minion group links.
 import OBR, { buildCurve, buildEffect, buildImage, buildLabel, buildShape } from "@owlbear-rodeo/sdk";
 import {
-  ID, TALK_CH, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, CAMP_CH, SCENE_KEY, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, WATER_KEY, WATER_MAX, WATER_STYLES, waterOf, FX_CH, isLightMarker, CARRY_KINDS, CARRY_LAST_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
+  ID, TALK_CH, EV_CH, CHAT_BC, chatLogKey, HERO_FLAG, HEROES_KEY, MON_KEY, OPEN_KEY, GROUP_COLORS, STATE_KEY, partyOf, partyList, barLayout, sceneOf, PEEK_KEY, SCENE_CH, CAMP_CH, SCENE_KEY, BAR_HIDDEN_KEY, condDef, COND_ORDER, TOD_KEY, todOf, todLook, LIGHT_KEY, LIGHT_TOOL, LIGHT_MAX, LIGHTS_OFF_KEY, WATER_KEY, WATER_MAX, WATER_STYLES, waterOf, FX_CH, isLightMarker, CARRY_KINDS, CARRY_LAST_KEY, LIGHT_PRESETS, lightPreset, lightOf, hexRgb,
   getHeroImages, heroLinks, getState, setState, updateState, addTokens, maxMoved,
 } from "./common.js";
 
@@ -610,7 +610,7 @@ ${sum}  I *= glow;
     const vw = await OBR.viewport.getWidth();
     const vh = await OBR.viewport.getHeight();
     const L = barLayout(md, vw);
-    const width = Math.min(vw - 20, L.total);
+    const width = Math.min(vw - 20, L.total + 72); // a little room each side for the GM's bell and the chat button
     const height = Math.round(L.maxW * (partyOf(md).style === "cutouts" ? 1.4 : 1.37)) + 120; // card + name + plate, plus room above for speech bubbles, emotes and panels
     const key = show ? `${vw}x${vh}:${width}x${height}:${partyOf(md).style}` : "off";
     if (key === barKey && !barRaise) return;
@@ -661,6 +661,84 @@ ${sum}  I *= glow;
   OBR.room.onMetadataChange(runBird);
   setInterval(runBird, 2000);
   runBird();
+
+  // ---- table chat: a panel on the left, opened from the party bar; this page keeps the log ----
+  const CHAT_ID = `${ID}/chat`, CHAT_OPEN = `${ID}/chatOpen`;
+  const chatBc = new BroadcastChannel(CHAT_BC);
+  let chatOpen = false;
+  try { chatOpen = localStorage.getItem(CHAT_OPEN) === "1"; } catch (_) {}
+  let chatKey = "", chatRaise = false;
+  async function syncChat() {
+    const vw = await OBR.viewport.getWidth();
+    const vh = await OBR.viewport.getHeight();
+    const key = chatOpen ? `${vw}x${vh}` : "off";
+    if (key === chatKey && !chatRaise) return;
+    if (!chatOpen) { await OBR.popover.close(CHAT_ID); chatKey = key; chatRaise = false; return; }
+    if (chatRaise) { chatRaise = false; await OBR.popover.close(CHAT_ID); }
+    // sits above the party bar's cards on the left, out of the way of the map tools
+    const bottom = vh - 240;
+    await OBR.popover.open({
+      id: CHAT_ID, url: new URL("chat.html", import.meta.url).href,
+      width: 320, height: Math.max(220, Math.min(460, bottom - 70)),
+      anchorReference: "POSITION", anchorPosition: { left: 12, top: bottom },
+      anchorOrigin: { horizontal: "LEFT", vertical: "BOTTOM" }, transformOrigin: { horizontal: "LEFT", vertical: "BOTTOM" },
+      hidePaper: true, disableClickAway: true, marginThreshold: 0,
+    });
+    chatKey = key;
+  }
+  let chatBusy = Promise.resolve();
+  const runChat = () => { chatBusy = chatBusy.then(syncChat).catch((err) => console.warn("[nimble chat]", err)); };
+  const setChat = (open) => {
+    chatOpen = open;
+    try { localStorage.setItem(CHAT_OPEN, open ? "1" : "0"); } catch (_) {}
+    runChat();
+    chatBc.postMessage({ chatState: chatOpen });
+  };
+  setInterval(runChat, 2000); // follows window resizes
+  runChat();
+
+  // The log: every message and GIF, kept in this browser so a reload or a closed panel loses nothing.
+  // Someone who joins late asks, and the GM's page answers with the recent history.
+  const chatLog = chatLogKey(OBR.room.id);
+  const readLog = () => { try { const v = JSON.parse(localStorage.getItem(chatLog) || "[]"); return Array.isArray(v) ? v : []; } catch (_) { return []; } };
+  const writeLog = (l) => { try { localStorage.setItem(chatLog, JSON.stringify(l.slice(-80))); } catch (_) {} chatBc.postMessage({ log: true }); };
+  const myChatId = await OBR.player.getId();
+  async function whoIs(pid) {
+    const md = await OBR.room.getMetadata();
+    const hero = Object.values(partyOf(md).members).find((m) => m.pid === pid && m.name);
+    const players = await OBR.party.getPlayers().catch(() => []);
+    const pl = players.find((x) => x.id === pid);
+    const gm = pid === myChatId ? (await OBR.player.getRole()) === "GM" : !!(pl && pl.role === "GM");
+    const name = hero ? hero.name : pl ? pl.name : pid === myChatId ? await OBR.player.getName() : "Someone";
+    return { name: gm && !hero ? `${name} (GM)` : name, gm };
+  }
+  OBR.broadcast.onMessage(EV_CH, async (e) => {
+    const d = e.data || {};
+    if (d.k === "say" || d.k === "gif") {
+      if (d.k === "gif" && !(typeof d.url === "string" && /^https?:\/\//.test(d.url))) return;
+      const who = await whoIs(d.pid);
+      const at = Number(d.at) || Date.now();
+      const entry = { id: d.id || `${d.pid}-${at}`, pid: d.pid, name: who.name, gm: who.gm, at };
+      if (d.k === "gif") { entry.url = d.url; entry.kind = d.kind === "video" ? "video" : "img"; } else entry.text = String(d.text || "").slice(0, 140);
+      const l = readLog();
+      if (!l.some((x) => x.id === entry.id)) { l.push(entry); writeLog(l); }
+    } else if (d.k === "chist?" && d.pid !== myChatId && (await OBR.player.getRole()) === "GM") {
+      OBR.broadcast.sendMessage(EV_CH, { k: "chist", pid: myChatId, to: d.pid, list: readLog().slice(-40) }, { destination: "ALL" }).catch(() => {});
+    } else if (d.k === "chist" && d.to === myChatId && Array.isArray(d.list)) {
+      const l = readLog(), have = new Set(l.map((x) => x.id));
+      for (const x of d.list) if (x && x.id && !have.has(x.id)) l.push(x);
+      l.sort((a, b) => (a.at || 0) - (b.at || 0));
+      writeLog(l);
+    }
+  });
+  setTimeout(() => { if (!readLog().length) OBR.broadcast.sendMessage(EV_CH, { k: "chist?", pid: myChatId }, { destination: "ALL" }).catch(() => {}); }, 2500);
+  chatBc.onmessage = (e) => {
+    const d = e.data || {};
+    if (d.chat === "toggle") setChat(!chatOpen);
+    else if (d.chat === "open") setChat(true);
+    else if (d.chat === "close") setChat(false);
+    else if (d.ask === "state") chatBc.postMessage({ chatState: chatOpen });
+  };
 
   // ---- scene backdrop over the whole screen, for everyone (GM can peek behind it) ----
   const SCENE_ID = `${ID}/scene`, PILL_ID = `${ID}/scenepill`;
@@ -722,6 +800,7 @@ ${sum}  I *= glow;
     sceneKey = key;
     barRaise = true; runBar(); // keep the party bar on top of the backdrop
     birdRaise = true; runBird();
+    chatRaise = true; runChat();
   }
   let sceneBusy = Promise.resolve();
   const runScene = () => { sceneBusy = sceneBusy.then(syncScene).catch((err) => console.warn("[nimble scene]", err)); };
